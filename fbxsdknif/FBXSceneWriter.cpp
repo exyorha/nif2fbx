@@ -1,13 +1,18 @@
 #include <fbxsdk/scene/fbxscene.h>
 #include <fbxsdk/scene/geometry/fbxnode.h>
 #include <fbxsdk/scene/geometry/fbxmesh.h>
+#include <fbxsdk/scene/geometry/fbxskeleton.h>
+#include <fbxsdk/scene/geometry/fbxskin.h>
+#include <fbxsdk/scene/geometry/fbxcluster.h>
 
 #include <nifparse/NIFFile.h>
 
 #include "FBXSceneWriter.h"
+#include "NIFUtils.h"
+#include "SkeletonProcessor.h"
 
 namespace fbxnif {
-	FBXSceneWriter::FBXSceneWriter(const NIFFile &file) : m_file(file) {
+	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton) {
 
 	}
 
@@ -22,7 +27,7 @@ namespace fbxnif {
 			throw std::runtime_error("no root object in NIF");
 		}
 			   
-		FbxAxisSystem::Max.ConvertScene(m_scene);
+		FbxAxisSystem(FbxAxisSystem::eZAxis, FbxAxisSystem::eParityOdd, FbxAxisSystem::eRightHanded).ConvertScene(m_scene);
 		FbxSystemUnit(1.4287109375).ConvertScene(m_scene);
 
 		convertSceneNode(std::get<NIFReference>(m_file.rootObjects().data.front()), m_scene->GetRootNode());
@@ -50,8 +55,10 @@ namespace fbxnif {
 
 		bool forceHidden = dict.isA("RootCollisionNode");
 
-		auto node = FbxNode::Create(m_scene, getString(dict.getValue<NIFDictionary>("Name")).c_str());
+		auto node = FbxNode::Create(m_scene, getString(dict.getValue<NIFDictionary>("Name"), m_file.header()).c_str());
 		containingNode->AddChild(node);
+
+		m_nodeMap.emplace(var.ptr, node);
 
 		fprintf(stderr, "%s: %s\n", node->GetName(), dict.typeChain.front().toString());
 
@@ -59,6 +66,18 @@ namespace fbxnif {
 		node->LclTranslation = getVector3(dict.getValue<NIFDictionary>("Translation"));
 		node->LclRotation = getMatrix3x3(dict.getValue<NIFDictionary>("Rotation")).GetR();
 		node->LclScaling = FbxDouble3(dict.getValue<float>("Scale"));
+
+		if (m_skeleton.allBones().count(var.ptr) != 0) {
+			auto skeleton = FbxSkeleton::Create(m_scene, (std::string(node->GetName()) + " Skeleton").c_str());
+			node->AddNodeAttribute(skeleton);
+
+			if (m_skeleton.commonBoneRoot() == var.ptr) {
+				skeleton->SetSkeletonType(FbxSkeleton::eRoot);
+			}
+			else {
+				skeleton->SetSkeletonType(FbxSkeleton::eLimbNode);
+			}
+		}
 
 		if (dict.kindOf("NiNode")) {
 			convertNiNode(dict, node);
@@ -148,6 +167,10 @@ namespace fbxnif {
 			}
 		}
 
+		/*
+		 * Type-specific data
+		 */
+
 		if (data.isA("NiTriShapeData")) {
 			Symbol symTriangles("Triangles");
 			Symbol symV1("v1");
@@ -177,67 +200,63 @@ namespace fbxnif {
 			fprintf(stderr, "%s: unknown type of geometry data: %s\n",
 				mesh->GetName(), data.typeChain.front().toString());
 		}
-	}
 
-	std::string FBXSceneWriter::getString(const NIFDictionary &dict) const {
-		Symbol string("String");
-		
-		if (dict.data.count(string) == 0) {
-			auto index = static_cast<int32_t>(dict.getValue<uint32_t>("Index"));
+		/*
+		 * Skinning
+		 */
 
-			if (index < 0)
-				return std::string();
+		Symbol symSkinInstance("Skin Instance");
+		if (dict.data.count(symSkinInstance) != 0) {
+			const auto &skinPtr = dict.getValue<NIFReference>(symSkinInstance).ptr;
+			if (skinPtr) {
+				const auto &skinInstance = std::get<NIFDictionary>(*skinPtr);
+				const auto &skinData = std::get<NIFDictionary>(*skinInstance.getValue<NIFReference>("Data").ptr);
 
-			const auto &strings = m_file.header().getValue<NIFArray>("Strings");
-			if (index >= strings.data.size())
-				throw std::logic_error("string index is out of range");
+				printf("Bone list index: %zu\n", skinData.data.find("Bone List")->second.index());
 
-			return std::get<NIFDictionary>(strings.data[index]).getValue<std::string>("Value");
+				auto skin = FbxSkin::Create(m_scene, (std::string(mesh->GetName()) + " Skin").c_str());
+
+				const auto &skinDataBones = skinData.getValue<NIFArray>("Bone List").data;
+
+				// SKIN TRANSFORM?
+
+				size_t boneIndex = 0;
+				for (const auto &bone : skinInstance.getValue<NIFArray>("Bones").data) {
+					std::shared_ptr<NIFVariant> bonePtr(std::get<NIFPointer>(bone).ptr);
+
+					auto cluster = FbxCluster::Create(m_scene, "");
+
+					auto it = m_nodeMap.find(bonePtr);
+					if (it == m_nodeMap.end()) {
+						throw std::logic_error("bone is not in the node map");
+					}
+
+					cluster->SetLink(it->second);
+					cluster->SetLinkMode(FbxCluster::eTotalOne);
+
+					const auto &boneData = std::get<NIFDictionary>(skinDataBones[boneIndex]);
+					// SKIN TRANSFORM?
+
+					cluster->SetTransformMatrix(
+						getTransform(boneData.getValue<NIFDictionary>("Skin Transform"))
+					);
+
+					for (const auto &weight : boneData.getValue<NIFArray>("Vertex Weights").data) {
+						const auto &weightDict = std::get<NIFDictionary>(weight);
+
+						cluster->AddControlPointIndex(
+							weightDict.getValue<uint32_t>("Index"),
+							weightDict.getValue<float>("Weight")
+						);
+					}
+
+					skin->AddCluster(cluster);
+
+					boneIndex++;
+				}
+
+				mesh->AddDeformer(skin);
+			}
 		}
-		else {
-			return dict.getValue<NIFDictionary>(string).getValue<std::string>("Value");
-		}
-	}
-
-	FbxVector4 FBXSceneWriter::getVector3(const NIFDictionary &dict) const {
-		return FbxVector4(
-			dict.getValue<float>("x"),
-			dict.getValue<float>("y"),
-			dict.getValue<float>("z")
-		);
-	}
-
-	FbxAMatrix FBXSceneWriter::getMatrix3x3(const NIFDictionary &dict) const {
-		FbxAMatrix mat;
-		
-		auto dat = static_cast<double *>(mat);
-
-		dat[0] = dict.getValue<float>("m11");
-		dat[1] = dict.getValue<float>("m21");
-		dat[2] = dict.getValue<float>("m31");
-		dat[4] = dict.getValue<float>("m12");
-		dat[5] = dict.getValue<float>("m22");
-		dat[6] = dict.getValue<float>("m32");
-		dat[8] = dict.getValue<float>("m13");
-		dat[9] = dict.getValue<float>("m23");
-		dat[10] = dict.getValue<float>("m33");
-
-		return mat;
-	}
-
-	FbxColor FBXSceneWriter::getColor4(const NIFDictionary &dict) const {
-		return FbxColor(
-			dict.getValue<float>("r"),
-			dict.getValue<float>("g"),
-			dict.getValue<float>("b"),
-			dict.getValue<float>("a")
-		);
-	}
-	
-	FbxVector2 FBXSceneWriter::getTexCoord(const NIFDictionary &dict) const {
-		return FbxVector2(
-			dict.getValue<float>("u"),
-			dict.getValue<float>("v")
-		);
 	}
 }

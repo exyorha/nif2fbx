@@ -9,6 +9,7 @@
 #include <Windows.h>
 
 #include "FBXSceneWriter.h"
+#include "SkeletonProcessor.h"
 
 namespace fbxnif {
 	const char *const NIFReader::m_extensions[]{ "nif", nullptr };
@@ -79,7 +80,10 @@ namespace fbxnif {
 			NIFFile file;
 			file.parse(m_stream);
 
-			FBXSceneWriter writer(file);
+			SkeletonProcessor skeletonProcessor;
+			skeletonProcessor.process(file);
+
+			FBXSceneWriter writer(file, skeletonProcessor);
 			writer.write(document);
 
 			return true;

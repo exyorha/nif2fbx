@@ -7,5 +7,9 @@ add_library(fbxsdknif SHARED
 	main.cpp
 	NIFReader.cpp
 	NIFReader.h
+	NIFUtils.cpp
+	NIFUtils.h
+	SkeletonProcessor.cpp
+	SkeletonProcessor.h
 )
 target_link_libraries(fbxsdknif PRIVATE fbxsdk nifparse)
