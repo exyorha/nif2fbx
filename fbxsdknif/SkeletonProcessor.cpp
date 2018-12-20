@@ -29,11 +29,11 @@ namespace fbxnif {
 	void SkeletonProcessor::process(NIFFile &file) {
 		m_file = &file;
 
-		const auto &roots = file.rootObjects().data;
+		auto &roots = file.rootObjects().data;
 		if (roots.empty())
 			return;
 
-		auto nifRoot = std::get<NIFReference>(roots.front());
+		auto &nifRoot = std::get<NIFReference>(roots.front());
 
 		collectSkinsAndParents(nifRoot, nullptr);
 
@@ -54,10 +54,10 @@ namespace fbxnif {
 			for (const auto &bone : m_allBones) {
 				std::list<std::shared_ptr<NIFVariant>> ancestors;
 
-				for (auto current = getParentOfNode(bone); current; current = getParentOfNode(current)) {
+				for (auto current = bone; current; current = getParentOfNode(current)) {
 					ancestors.push_front(current);
 				}
-
+				
 				boneAncestors.emplace_back(std::move(ancestors));
 			}
 
@@ -107,7 +107,7 @@ namespace fbxnif {
 
 			auto skeletonParent = getParentOfNode(m_commonBoneRoot);
 			if (!skeletonParent) {
-				if (skeletonParent != nifRoot.ptr) {
+				if (m_commonBoneRoot != nifRoot.ptr) {
 					throw std::logic_error("skeleton root has no parent, but is not the root node");
 				}
 
@@ -154,7 +154,8 @@ namespace fbxnif {
 				
 				rootDict.data.emplace("Has Bounding Volume", 0U);
 
-				m_parentNodes.emplace(nifRoot.ptr, newRoot);
+				m_parentNodes.erase(m_commonBoneRoot);
+				m_parentNodes.emplace(m_commonBoneRoot, newRoot);
 
 				/*
 				 * NiNode
@@ -166,6 +167,8 @@ namespace fbxnif {
 				nifRoot.type = Symbol("NiNode");
 				nifRoot.target = -2;
 				nifRoot.ptr = newRoot;
+
+
 			}
 
 			printf("Skeleton root: %s\nAll bones, unordered:\n", nodeName(std::get<NIFDictionary>(*m_commonBoneRoot)).c_str());
@@ -351,6 +354,28 @@ namespace fbxnif {
 	void SkeletonProcessor::collectSkinsAndParents(const NIFReference &node, const std::shared_ptr<NIFVariant> &parentNode) {
 		auto &desc = std::get<NIFDictionary>(*node.ptr);
 		m_parentNodes.emplace(node.ptr, parentNode);
+
+		for (auto controller = desc.getValue<NIFReference>("Controller").ptr; controller; controller = std::get<NIFDictionary>(*controller).getValue<NIFReference>("Next Controller").ptr) {
+			if (std::get<NIFDictionary>(*controller).kindOf("NiKeyframeController")) {
+				auto &keyfDesc = std::get<NIFDictionary>(*controller);
+				auto &keyfData = std::get<NIFDictionary>(*keyfDesc.getValue<NIFReference>("Data").ptr);
+
+				auto rotationKeys = keyfData.getValue<uint32_t>("Num Rotation Keys");
+				auto translationKeys = keyfData.getValue<NIFDictionary>("Translations").getValue<uint32_t>("Num Keys");
+				auto scaleKeys = keyfData.getValue<NIFDictionary>("Scales").getValue<uint32_t>("Num Keys");
+
+				if (rotationKeys < 2 && translationKeys < 2 && scaleKeys < 2) {
+					fprintf(stderr, "%s: has degenerate keyframe controller, removing\n", nodeName(desc).c_str());
+
+// TODO: implement actual removal
+
+				}
+				else {
+					m_allBones.emplace(node.ptr);
+				}
+			}
+		}
+
 		if (desc.kindOf("NiNode")) {
 			for (const auto &child : desc.getValue<NIFArray>("Children").data) {
 				const auto &ref = std::get<NIFReference>(child);
