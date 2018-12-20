@@ -212,14 +212,10 @@ namespace fbxnif {
 				const auto &skinInstance = std::get<NIFDictionary>(*skinPtr);
 				const auto &skinData = std::get<NIFDictionary>(*skinInstance.getValue<NIFReference>("Data").ptr);
 
-				printf("Bone list index: %zu\n", skinData.data.find("Bone List")->second.index());
-
 				auto skin = FbxSkin::Create(m_scene, (std::string(mesh->GetName()) + " Skin").c_str());
 
 				const auto &skinDataBones = skinData.getValue<NIFArray>("Bone List").data;
-
-				// SKIN TRANSFORM?
-
+				
 				size_t boneIndex = 0;
 				for (const auto &bone : skinInstance.getValue<NIFArray>("Bones").data) {
 					std::shared_ptr<NIFVariant> bonePtr(std::get<NIFPointer>(bone).ptr);
@@ -235,7 +231,6 @@ namespace fbxnif {
 					cluster->SetLinkMode(FbxCluster::eTotalOne);
 
 					const auto &boneData = std::get<NIFDictionary>(skinDataBones[boneIndex]);
-					// SKIN TRANSFORM?
 
 					cluster->SetTransformMatrix(
 						getTransform(boneData.getValue<NIFDictionary>("Skin Transform"))
