@@ -1,0 +1,33 @@
+cmake_minimum_required(VERSION 3.12)
+project(nif2fbx)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(FBX_SDK_ROOT "" CACHE PATH "FBX SDK Root Directory")
+if(NOT FBX_SDK_ROOT)
+	message(FATAL_ERROR "FBX SDK root directory must be specified with FBX_SDK_ROOT variable")
+endif()
+
+add_library(fbxsdk INTERFACE)
+target_include_directories(fbxsdk INTERFACE "${FBX_SDK_ROOT}/include")
+target_link_libraries(fbxsdk INTERFACE "${FBX_SDK_ROOT}/lib/vs2015/x64/release/libfbxsdk.lib")
+target_compile_definitions(fbxsdk INTERFACE -DFBXSDK_SHARED)
+
+if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
+	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+
+	add_custom_target(copy_fbxsdk_dll ALL
+		COMMAND
+			cmake -E copy_if_different 
+			${FBX_SDK_ROOT}/lib/vs2015/x64/release/libfbxsdk.dll 
+			$<TARGET_FILE_DIR:nif2fbx-test>/libfbxsdk.dll
+		VERBATIM
+	)
+endif()
+
+
+add_subdirectory(nifparse)
+add_subdirectory(fbxsdknif)
+add_subdirectory(nif2fbx-test)

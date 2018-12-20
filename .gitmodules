@@ -1,0 +1,3 @@
+[submodule "nifparse"]
+	path = nifparse
+	url = https://github.com/grindars/nifparse.git
