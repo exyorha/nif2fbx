@@ -9,7 +9,7 @@
 #include <fbxsdk/core/math/fbxquaternion.h>
 
 namespace fbxnif {
-	SkeletonProcessor::SkeletonProcessor() {
+	SkeletonProcessor::SkeletonProcessor() : m_cleaningRequired(false) {
 
 	}
 
@@ -28,6 +28,8 @@ namespace fbxnif {
 
 	void SkeletonProcessor::process(NIFFile &file) {
 		m_file = &file;
+
+		m_cleaningRequired = file.header().getValue<uint32_t>("Version") == 0x04000002; // Only Morrowind needs heavy-duty merging and cleaning
 
 		auto &roots = file.rootObjects().data;
 		if (roots.empty())
@@ -118,70 +120,72 @@ namespace fbxnif {
 				}
 			} while (needRecalculation);
 
-			auto skeletonParent = getParentOfNode(m_commonBoneRoot);
-			if (!skeletonParent) {
-				if (m_commonBoneRoot != nifRoot.ptr) {
-					throw std::logic_error("skeleton root has no parent, but is not the root node");
+			if (m_cleaningRequired) {
+				auto skeletonParent = getParentOfNode(m_commonBoneRoot);
+				if (!skeletonParent) {
+					if (m_commonBoneRoot != nifRoot.ptr) {
+						throw std::logic_error("skeleton root has no parent, but is not the root node");
+					}
+
+					auto newRoot = std::make_shared<NIFVariant>();
+					*newRoot = NIFDictionary();
+					auto &rootDict = std::get<NIFDictionary>(*newRoot);
+					rootDict.isNiObject = true;
+					rootDict.typeChain.emplace_back("NiNode");
+					rootDict.typeChain.emplace_back("NiAVObject");
+					rootDict.typeChain.emplace_back("NiObjectNET");
+					rootDict.typeChain.emplace_back("NiObject");
+
+					/*
+					 * NiObject
+					 */
+					NIFDictionary name;
+					name.isNiObject = false;
+					name.typeChain.emplace_back("string");
+					NIFDictionary nameString;
+					nameString.isNiObject = false;
+					nameString.typeChain.emplace_back("SizedString");
+					nameString.data.emplace("Value", "SynthesizedRoot");
+					name.data.emplace("String", std::move(nameString));
+					rootDict.data.emplace("Name", std::move(name));
+
+					rootDict.data.emplace("Extra Data", NIFReference());
+
+					rootDict.data.emplace("Extra Data List", NIFArray());
+
+					rootDict.data.emplace("Controller", NIFReference());
+
+					/*
+					 * NiAVObject
+					 */
+					rootDict.data.emplace("Flags", 0U);
+
+					rootDict.data.emplace("Translation", makeVector3(FbxVector4()));
+
+					rootDict.data.emplace("Rotation", makeMatrix3x3(FbxAMatrix()));
+
+					rootDict.data.emplace("Scale", 1.0f);
+
+					rootDict.data.emplace("Properties", NIFArray());
+
+					rootDict.data.emplace("Has Bounding Volume", 0U);
+
+					m_parentNodes.erase(m_commonBoneRoot);
+					m_parentNodes.emplace(m_commonBoneRoot, newRoot);
+
+					/*
+					 * NiNode
+					 */
+					NIFArray children;
+					children.data.emplace_back(std::move(nifRoot));
+					rootDict.data.emplace("Children", std::move(children));
+
+					nifRoot.type = Symbol("NiNode");
+					nifRoot.target = -2;
+					nifRoot.ptr = newRoot;
+
+
 				}
-
-				auto newRoot = std::make_shared<NIFVariant>();
-				*newRoot = NIFDictionary();
-				auto &rootDict = std::get<NIFDictionary>(*newRoot);
-				rootDict.isNiObject = true;
-				rootDict.typeChain.emplace_back("NiNode");
-				rootDict.typeChain.emplace_back("NiAVObject");
-				rootDict.typeChain.emplace_back("NiObjectNET");
-				rootDict.typeChain.emplace_back("NiObject");
-
-				/*
-				 * NiObject
-				 */
-				NIFDictionary name;
-				name.isNiObject = false;
-				name.typeChain.emplace_back("string");
-				NIFDictionary nameString;
-				nameString.isNiObject = false;
-				nameString.typeChain.emplace_back("SizedString");
-				nameString.data.emplace("Value", "SynthesizedRoot");
-				name.data.emplace("String", std::move(nameString));
-				rootDict.data.emplace("Name", std::move(name));
-
-				rootDict.data.emplace("Extra Data", NIFReference());
-
-				rootDict.data.emplace("Extra Data List", NIFArray());
-
-				rootDict.data.emplace("Controller", NIFReference());
-
-				/*
-				 * NiAVObject
-				 */
-				rootDict.data.emplace("Flags", 0U);
-
-				rootDict.data.emplace("Translation", makeVector3(FbxVector4()));
-
-				rootDict.data.emplace("Rotation", makeMatrix3x3(FbxAMatrix()));
-
-				rootDict.data.emplace("Scale", 1.0f);
-				
-				rootDict.data.emplace("Properties", NIFArray());
-				
-				rootDict.data.emplace("Has Bounding Volume", 0U);
-
-				m_parentNodes.erase(m_commonBoneRoot);
-				m_parentNodes.emplace(m_commonBoneRoot, newRoot);
-
-				/*
-				 * NiNode
-				 */
-				NIFArray children;
-				children.data.emplace_back(std::move(nifRoot));
-				rootDict.data.emplace("Children", std::move(children));
-
-				nifRoot.type = Symbol("NiNode");
-				nifRoot.target = -2;
-				nifRoot.ptr = newRoot;
-
-
 			}
 
 			printf("Skeleton root: %s\nAll bones, unordered:\n", nodeName(std::get<NIFDictionary>(*m_commonBoneRoot)).c_str());
@@ -189,7 +193,8 @@ namespace fbxnif {
 				printf(" - %s\n", nodeName(std::get<NIFDictionary>(*bone)).c_str());
 			}
 
-			processNode(nifRoot);
+			if(m_cleaningRequired)
+				processNode(nifRoot);
 		}
 
 	}

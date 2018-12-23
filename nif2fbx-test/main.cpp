@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
 	manager->LoadPluginsDirectory(lPath.Buffer(), lExtension);
 	
 	auto importer = fbxsdk::FbxImporter::Create(manager, "");
-	auto status = importer->Initialize("C:\\projects\\nifparse\\meshes\\farmhouse01.nif", -1, manager->GetIOSettings());
+	auto status = importer->Initialize("C:\\projects\\nifparse\\meshes\\classic\\skeleton.nif", -1, manager->GetIOSettings());
 	if (!status) {
 		fprintf(stderr, "FbxImporter::Initialize failed: %s\n", importer->GetStatus().GetErrorString());
 		return 1;
@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
 
 	auto exporter = fbxsdk::FbxExporter::Create(manager, "");
 	exporter->SetFileExportVersion(FBX_2013_00_COMPATIBLE);
-	status = exporter->Initialize("C:\\projects\\nifparse\\meshes\\farmhouse.fbx", formatIndex, manager->GetIOSettings());
+	status = exporter->Initialize("C:\\projects\\nifparse\\meshes\\skeleton.fbx", formatIndex, manager->GetIOSettings());
 	if (!status) {
 		fprintf(stderr, "FbxExporter::Initialize failed: %s\n", exporter->GetStatus().GetErrorString());
 		return 1;

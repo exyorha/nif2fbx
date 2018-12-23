@@ -48,6 +48,7 @@ namespace fbxnif {
 		std::unordered_map<std::shared_ptr<NIFVariant>, std::shared_ptr<NIFVariant>> m_parentNodes;
 		std::shared_ptr<NIFVariant> m_commonBoneRoot;
 		std::unordered_set<std::shared_ptr<NIFVariant>> m_allBones;
+		bool m_cleaningRequired;
 	};
 }
 
