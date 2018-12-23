@@ -44,10 +44,12 @@ namespace fbxnif {
 
 		void convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node);
 		void convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node);
-		
+		void convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node);
 
 		template<typename ElementType>
 		void importVectorElement(const NIFDictionary &data, FbxMesh *mesh, const Symbol &name, ElementType *(FbxGeometryBase::*createElement)());
+		
+		void importMeshTriangles(FbxMesh *mesh, const NIFDictionary &container);
 
 		const NIFFile &m_file;
 		const SkeletonProcessor &m_skeleton;

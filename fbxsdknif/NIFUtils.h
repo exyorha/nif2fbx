@@ -15,12 +15,22 @@ namespace fbxnif {
 	FbxVector4 getVector3(const NIFDictionary &dict);
 	FbxAMatrix getMatrix3x3(const NIFDictionary &dict);
 	FbxColor getColor4(const NIFDictionary &dict);
+	FbxColor getByteColor4(const NIFDictionary &dict);
 	FbxVector2 getTexCoord(const NIFDictionary &dict);
 	FbxAMatrix getTransform(const NIFDictionary &dict);
+	FbxVector4 getByteVector3(const NIFDictionary &dict);
 
 	NIFDictionary makeVector3(const FbxVector4 &vector);
 	NIFDictionary makeMatrix3x3(const FbxAMatrix &matrix);
 	NIFDictionary makeTransform(const FbxAMatrix &matrix);
+
+	static inline float getSignedFloatFromU8(uint8_t value) {
+		return (static_cast<float>(value) / 255.0f) * 2.0f - 1.0f;
+	}
+
+	static inline float getUnsignedFloatFromU8(uint8_t value) {
+		return (static_cast<float>(value) / 255.0f);
+	}
 }
 
 #endif

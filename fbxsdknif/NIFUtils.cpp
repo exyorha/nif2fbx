@@ -31,6 +31,14 @@ namespace fbxnif {
 		);
 	}
 
+	FbxVector4 getByteVector3(const NIFDictionary &dict) {
+		return FbxVector4(
+			getSignedFloatFromU8(dict.getValue<uint32_t>("x")),
+			getSignedFloatFromU8(dict.getValue<uint32_t>("y")),
+			getSignedFloatFromU8(dict.getValue<uint32_t>("z"))
+		);
+	}
+
 	FbxAMatrix getMatrix3x3(const NIFDictionary &dict) {
 		FbxAMatrix mat;
 
@@ -57,6 +65,15 @@ namespace fbxnif {
 			dict.getValue<float>("g"),
 			dict.getValue<float>("b"),
 			dict.getValue<float>("a")
+		);
+	}
+
+	FbxColor getByteColor4(const NIFDictionary &dict) {
+		return FbxColor(
+			getUnsignedFloatFromU8(dict.getValue<uint32_t>("r")),
+			getUnsignedFloatFromU8(dict.getValue<uint32_t>("g")),
+			getUnsignedFloatFromU8(dict.getValue<uint32_t>("b")),
+			getUnsignedFloatFromU8(dict.getValue<uint32_t>("a"))
 		);
 	}
 
