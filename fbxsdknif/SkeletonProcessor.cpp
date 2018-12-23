@@ -48,62 +48,75 @@ namespace fbxnif {
 		}
 
 		if(!m_allBones.empty()) {
-			std::vector<std::list<std::shared_ptr<NIFVariant>>> boneAncestors;
-			boneAncestors.reserve(m_allBones.size());
+			bool needRecalculation;
+			do {
+				needRecalculation = false;
 
-			for (const auto &bone : m_allBones) {
-				std::list<std::shared_ptr<NIFVariant>> ancestors;
+				std::vector<std::list<std::shared_ptr<NIFVariant>>> boneAncestors;
+				boneAncestors.reserve(m_allBones.size());
 
-				for (auto current = bone; current; current = getParentOfNode(current)) {
-					ancestors.push_front(current);
+				for (const auto &bone : m_allBones) {
+					std::list<std::shared_ptr<NIFVariant>> ancestors;
+
+					for (auto current = bone; current; current = getParentOfNode(current)) {
+						ancestors.push_front(current);
+					}
+
+					boneAncestors.emplace_back(std::move(ancestors));
 				}
-				
-				boneAncestors.emplace_back(std::move(ancestors));
-			}
 
-			if (boneAncestors.empty())
-				throw std::logic_error("skins are present, but not bones");
+				if (boneAncestors.empty())
+					throw std::logic_error("skins are present, but not bones");
 
-			if (boneAncestors[0].empty())
-				throw std::logic_error("common bone ancestor cannot be determined");
-
-			auto root = boneAncestors[0].front();
-
-			for (size_t index = 1, size = boneAncestors.size(); index < size; index++) {
-				if (boneAncestors[0].empty() || boneAncestors[0].front() != root)
+				if (boneAncestors[0].empty())
 					throw std::logic_error("common bone ancestor cannot be determined");
-			}
 
-			for (auto &list : boneAncestors) {
-				list.pop_front();
-			}
-
-			while (!boneAncestors[0].empty()) {
-				auto firstAncestor = boneAncestors[0].front();
-				bool allSame = true;
+				auto root = boneAncestors[0].front();
 
 				for (size_t index = 1, size = boneAncestors.size(); index < size; index++) {
-					if (boneAncestors[index].empty() || boneAncestors[index].front() != firstAncestor) {
-						allSame = false;
+					if (boneAncestors[0].empty() || boneAncestors[0].front() != root)
+						throw std::logic_error("common bone ancestor cannot be determined");
+				}
+
+				for (auto &list : boneAncestors) {
+					list.pop_front();
+				}
+
+				while (!boneAncestors[0].empty()) {
+					auto firstAncestor = boneAncestors[0].front();
+					bool allSame = true;
+
+					printf("Examining %s\n", nodeName(std::get<NIFDictionary>(*firstAncestor)).c_str());
+
+					for (size_t index = 1, size = boneAncestors.size(); index < size; index++) {
+						if (boneAncestors[index].empty() || boneAncestors[index].front() != firstAncestor) {
+							allSame = false;
+							break;
+						}
+					}
+
+					if (allSame) {
+						root = firstAncestor;
+
+						auto result = m_allBones.emplace(root);
+						if (result.second)
+							needRecalculation = true;
+
+						for (auto &list : boneAncestors) {
+							list.pop_front();
+						}
+					}
+					else {
 						break;
 					}
 				}
 
-				if (allSame) {
-					root = firstAncestor;
-					
-					m_allBones.emplace(root);
+				m_commonBoneRoot = root;
 
-					for (auto &list : boneAncestors) {
-						list.pop_front();
-					}
+				if (needRecalculation) {
+					printf("List of bones changed, rechecking root bone\n");
 				}
-				else {
-					break;
-				}
-			}
-
-			m_commonBoneRoot = root;
+			} while (needRecalculation);
 
 			auto skeletonParent = getParentOfNode(m_commonBoneRoot);
 			if (!skeletonParent) {
@@ -185,7 +198,8 @@ namespace fbxnif {
 		const auto &dict = std::get<NIFDictionary>(*node.ptr);
 		if (dict.kindOf("NiNode")) {
 			if (m_commonBoneRoot == node.ptr) {
-				for (const auto &child : dict.getValue<NIFArray>("Children").data) {
+				auto childrenCopy = dict.getValue<NIFArray>("Children").data;
+				for (const auto &child : childrenCopy) {
 					const auto &childDesc = std::get<NIFReference>(child);
 					if (childDesc.ptr)
 						processNodeInSkeleton(childDesc);
