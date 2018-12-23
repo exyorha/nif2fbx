@@ -39,6 +39,9 @@ namespace fbxnif {
 
 		void write(FbxDocument *document);
 
+		inline const FbxString &skeletonFile() const { return m_skeletonFile; }
+		inline void setSkeletonFile(const FbxString &skeletonFile) { m_skeletonFile = skeletonFile; }
+
 	private:
 		void convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode);
 
@@ -51,12 +54,18 @@ namespace fbxnif {
 		
 		void importMeshTriangles(FbxMesh *mesh, const NIFDictionary &container);
 
+		FbxNode *findSkeletonRoot(FbxNode *parent);
+		void registerImportedBones(FbxNode *bone);
+
 		const NIFFile &m_file;
 		const SkeletonProcessor &m_skeleton;
-		fbxsdk::FbxScene *m_scene;
+		FbxScene *m_scene;
 		std::unordered_map<std::shared_ptr<NIFVariant>, FbxNode *> m_nodeMap;
+		std::unordered_map<std::string, FbxNode *> m_importedBoneMap;
 		unsigned int m_meshesGenerated;
 		unsigned int m_skeletonNodesGenerated;
+		FbxString m_skeletonFile;
+		bool m_skeletonImported;
 	};
 }
 

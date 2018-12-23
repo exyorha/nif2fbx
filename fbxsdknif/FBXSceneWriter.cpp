@@ -4,6 +4,8 @@
 #include <fbxsdk/scene/geometry/fbxskeleton.h>
 #include <fbxsdk/scene/geometry/fbxskin.h>
 #include <fbxsdk/scene/geometry/fbxcluster.h>
+#include <fbxsdk/fileio/fbximporter.h>
+#include <fbxsdk/utils/fbxclonemanager.h>
 
 #include <nifparse/NIFFile.h>
 #include <nifparse/PrettyPrinter.h>
@@ -26,6 +28,7 @@ namespace fbxnif {
 
 		m_meshesGenerated = 0;
 		m_skeletonNodesGenerated = 0;
+		m_skeletonImported = false;
 
 		if (m_file.rootObjects().data.empty()) {
 			throw std::runtime_error("no root object in NIF");
@@ -63,6 +66,55 @@ namespace fbxnif {
 	}
 
 	void FBXSceneWriter::convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
+
+		if (!m_skeletonFile.IsEmpty() && !m_skeletonImported) {
+			m_skeletonImported = true;
+
+			auto manager = m_scene->GetFbxManager();
+			auto ios = FbxIOSettings::Create(manager, IOSROOT);
+			ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
+
+			auto importer = FbxImporter::Create(manager, "");
+			auto status = importer->Initialize(m_skeletonFile, -1, ios);
+			if (!status) {
+				std::stringstream error;
+				error << "FbxImporter::Initialize failed: " << importer->GetStatus().GetErrorString();
+				throw std::runtime_error(error.str());
+			}
+
+			auto skeletonScene = FbxScene::Create(manager, "");
+
+			status = importer->Import(skeletonScene);
+			if (!status) {
+				std::stringstream error;
+				error << "FbxImporter::Import failed: " << importer->GetStatus().GetErrorString();
+				skeletonScene->Destroy();
+				importer->Destroy();
+				ios->Destroy();
+				throw std::runtime_error(error.str());
+			}
+
+			importer->Destroy();
+
+			ios->Destroy();
+
+			auto skeletonRoot = findSkeletonRoot(skeletonScene->GetRootNode());
+
+			if (!skeletonRoot) {
+				skeletonScene->Destroy();
+
+				throw std::runtime_error("skeleton root not found in imported skeleton");
+			}
+
+			auto newSkeletonRoot = static_cast<FbxNode *>(FbxCloneManager::Clone(skeletonRoot, m_scene));
+
+			skeletonScene->Destroy();
+
+			node->AddChild(newSkeletonRoot);
+
+			registerImportedBones(newSkeletonRoot);
+		}
+
 		if (dict.typeChain.front() != Symbol("NiNode")) {
 			fprintf(stderr, "FBXSceneWriter: %s: unsupported NiNode subclass interpreted as NiNode: %s\n", node->GetName(), dict.typeChain.front().toString());
 		}
@@ -76,15 +128,51 @@ namespace fbxnif {
 		}
 	}
 
+	void FBXSceneWriter::registerImportedBones(FbxNode *bone) {
+		auto skeleton = bone->GetSkeleton();
+		if (skeleton) {
+			m_importedBoneMap.emplace(bone->GetName(), bone);
+		}
+
+		for (int index = 0, count = bone->GetChildCount(); index < count; index++) {
+			registerImportedBones(bone->GetChild(index));
+		}
+	}
+
+	FbxNode *FBXSceneWriter::findSkeletonRoot(FbxNode *parent) {
+		auto skeleton = parent->GetSkeleton();
+		if (skeleton)
+			return parent;
+
+		for (int index = 0, count = parent->GetChildCount(); index < count; index++) {
+			auto child = parent->GetChild(index);
+			auto skeleton = findSkeletonRoot(child);
+			if (skeleton)
+				return skeleton;
+		}
+
+		return nullptr;
+	}
+
 	void FBXSceneWriter::convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode) {
 		const auto &dict = std::get<NIFDictionary>(*var.ptr);
 		if (!dict.kindOf("NiAVObject")) {
 			throw std::runtime_error("scene node is not an instance of NiAVObject");
 		}
 
+		const auto &name = getString(dict.getValue<NIFDictionary>("Name"), m_file.header());
+
+		auto it = m_importedBoneMap.find(name);
+		if (it != m_importedBoneMap.end()) {
+			fprintf(stderr, "FBXSceneWriter: '%s' is replaced by the imported skeleton\n", name.c_str());
+
+			m_nodeMap.emplace(var.ptr, it->second);
+			return;
+		}
+
 		bool forceHidden = dict.isA("RootCollisionNode");
 
-		auto node = FbxNode::Create(m_scene, getString(dict.getValue<NIFDictionary>("Name"), m_file.header()).c_str());
+		auto node = FbxNode::Create(m_scene, name.c_str());
 		containingNode->AddChild(node);
 
 		m_nodeMap.emplace(var.ptr, node);

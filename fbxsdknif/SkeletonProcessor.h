@@ -37,7 +37,7 @@ namespace fbxnif {
 		void processNode(const NIFReference &node);
 		void processNodeInSkeleton(const NIFReference &node);
 		void markBones(const NIFReference &node);
-
+		
 		std::string nodeName(const NIFDictionary &node) const;
 
 		FbxAMatrix getLocalTransform(const NIFDictionary &node) const;

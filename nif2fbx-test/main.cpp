@@ -77,6 +77,12 @@ int main(int argc, char *argv[]) {
 	}))
 		return 1;
 
+
+	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\classic\\alduin.nif", "C:\\projects\\nifparse\\meshes\\alduin.fbx", [](fbxsdk::FbxIOSettings *ios) {
+		ios->SetStringProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Skeleton", "C:\\projects\\nifparse\\meshes\\skeleton.fbx");
+	}))
+		return 1;
+
 	manager->Destroy();
 
 	return 0;

@@ -58,6 +58,15 @@ namespace fbxnif {
 				"Import as skeleton",
 				&skeletonImportDefault,
 				true);
+
+			FbxString skeletonDefault = "";
+			ios.AddProperty(
+				plugin,
+				"Skeleton",
+				FbxStringDT,
+				"Full path to skeleton file (FBX)",
+				&skeletonDefault,
+				true);
 		}
 
 	}
@@ -106,6 +115,14 @@ namespace fbxnif {
 			skeletonProcessor.process(file);
 
 			FBXSceneWriter writer(file, skeletonProcessor);
+
+			if (ios) {
+				auto skeletonFile = ios->GetStringProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Skeleton", "");
+				if (!skeletonFile.IsEmpty()) {
+					writer.setSkeletonFile(skeletonFile);
+				}
+			}
+
 			writer.write(document);
 
 			return true;
