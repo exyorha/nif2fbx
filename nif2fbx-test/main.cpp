@@ -9,6 +9,52 @@
 
 #include <fbxsdk/scene/fbxscene.h>
 
+#include <functional>
+
+bool convert(fbxsdk::FbxManager *manager, const char *from, const char *to, std::function<void(fbxsdk::FbxIOSettings *)> &&config) {
+
+	auto ios = fbxsdk::FbxIOSettings::Create(manager, IOSROOT);
+
+	config(ios);
+
+	auto importer = fbxsdk::FbxImporter::Create(manager, "");
+	auto status = importer->Initialize(from, -1, ios);
+	if (!status) {
+		fprintf(stderr, "FbxImporter::Initialize failed: %s\n", importer->GetStatus().GetErrorString());
+		return false;
+	}
+
+	auto scene = fbxsdk::FbxScene::Create(manager, "myScene");
+	status = importer->Import(scene);
+	if (!status) {
+		fprintf(stderr, "FbxImporter::Import failed: %s\n", importer->GetStatus().GetErrorString());
+		return false;
+	}
+
+	importer->Destroy();
+
+	ios->Destroy();
+
+	auto exporter = fbxsdk::FbxExporter::Create(manager, "");
+	exporter->SetFileExportVersion(FBX_2013_00_COMPATIBLE);
+	status = exporter->Initialize(to, -1, manager->GetIOSettings());
+	if (!status) {
+		fprintf(stderr, "FbxExporter::Initialize failed: %s\n", exporter->GetStatus().GetErrorString());
+		return false;
+	}
+
+	status = exporter->Export(scene);
+	if (!status) {
+		fprintf(stderr, "FbxExporter::Export failed: %s\n", exporter->GetStatus().GetErrorString());
+		return false;
+	}
+	exporter->Destroy();
+
+	scene->Destroy();
+
+	return true;
+}
+
 int main(int argc, char *argv[]) {
 	auto manager = fbxsdk::FbxManager::Create();
 	
@@ -26,46 +72,12 @@ int main(int argc, char *argv[]) {
 #endif
 	manager->LoadPluginsDirectory(lPath.Buffer(), lExtension);
 	
-	auto importer = fbxsdk::FbxImporter::Create(manager, "");
-	auto status = importer->Initialize("C:\\projects\\nifparse\\meshes\\classic\\skeleton.nif", -1, manager->GetIOSettings());
-	if (!status) {
-		fprintf(stderr, "FbxImporter::Initialize failed: %s\n", importer->GetStatus().GetErrorString());
+	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\classic\\skeleton.nif", "C:\\projects\\nifparse\\meshes\\skeleton.fbx", [](fbxsdk::FbxIOSettings *ios) {
+		ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
+	}))
 		return 1;
-	}
-
-	auto scene = fbxsdk::FbxScene::Create(manager, "myScene");
-	status = importer->Import(scene);
-	if (!status) {
-		fprintf(stderr, "FbxImporter::Import failed: %s\n", importer->GetStatus().GetErrorString());
-		return 1;
-	}
-
-	importer->Destroy();
-
-	int formatIndex = -1;
-	/*int count = manager->GetIOPluginRegistry()->GetWriterFormatCount();
-	for (int index = 0; index < count; index++) {
-		auto desc = manager->GetIOPluginRegistry()->GetWriterFormatDescription(index);
-		if (strstr(desc, "FBX ascii")) {
-			formatIndex = index;
-			break;
-		}
-	}*/
-
-	auto exporter = fbxsdk::FbxExporter::Create(manager, "");
-	exporter->SetFileExportVersion(FBX_2013_00_COMPATIBLE);
-	status = exporter->Initialize("C:\\projects\\nifparse\\meshes\\skeleton.fbx", formatIndex, manager->GetIOSettings());
-	if (!status) {
-		fprintf(stderr, "FbxExporter::Initialize failed: %s\n", exporter->GetStatus().GetErrorString());
-		return 1;
-	}
-
-	status = exporter->Export(scene);
-	if (!status) {
-		fprintf(stderr, "FbxExporter::Export failed: %s\n", exporter->GetStatus().GetErrorString());
-		return 1;
-	}
-	exporter->Destroy();
 
 	manager->Destroy();
+
+	return 0;
 }

@@ -43,6 +43,22 @@ namespace fbxnif {
 	}
 		
 	void NIFReader::IOSettingsFiller(FbxIOSettings &ios) {
+		auto extensions = ios.GetProperty(IMP_FBX_EXT_SDK_GRP);
+		if (!extensions.IsValid())
+			return;
+
+		auto plugin = ios.AddPropertyGroup(extensions, "FBXSDKNIF", FbxStringDT, "FBXSDKNIF");
+		if (plugin.IsValid()) {
+			bool skeletonImportDefault = false;
+
+			ios.AddProperty(
+				plugin,
+				"SkeletonImport",
+				FbxBoolDT,
+				"Import as skeleton",
+				&skeletonImportDefault,
+				true);
+		}
 
 	}
 
@@ -81,6 +97,12 @@ namespace fbxnif {
 			file.parse(m_stream);
 
 			SkeletonProcessor skeletonProcessor;
+
+			auto ios = GetIOSettings();
+			if (ios) {
+				skeletonProcessor.setSkeletonImport(ios->GetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", false));
+			}
+
 			skeletonProcessor.process(file);
 
 			FBXSceneWriter writer(file, skeletonProcessor);

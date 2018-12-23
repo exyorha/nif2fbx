@@ -55,6 +55,8 @@ namespace fbxnif {
 		const SkeletonProcessor &m_skeleton;
 		fbxsdk::FbxScene *m_scene;
 		std::unordered_map<std::shared_ptr<NIFVariant>, FbxNode *> m_nodeMap;
+		unsigned int m_meshesGenerated;
+		unsigned int m_skeletonNodesGenerated;
 	};
 }
 

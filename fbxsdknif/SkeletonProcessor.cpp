@@ -9,7 +9,16 @@
 #include <fbxsdk/core/math/fbxquaternion.h>
 
 namespace fbxnif {
-	SkeletonProcessor::SkeletonProcessor() : m_cleaningRequired(false) {
+	
+	/*
+	 * In order from most preferred to least preferred
+	 */
+	const char *const SkeletonProcessor::m_rootBoneNames[]{
+		"NPC Root [Root]", // Skyrim's dragon.nif has vestigial 'NPC' and real 'NPC Root' at top level
+		"NPC"
+	};
+
+	SkeletonProcessor::SkeletonProcessor() : m_cleaningRequired(false), m_skeletonImport(false) {
 
 	}
 
@@ -187,16 +196,48 @@ namespace fbxnif {
 
 				}
 			}
+		}
 
+		if (!m_commonBoneRoot && m_skeletonImport) {
+			fprintf(stderr, "Requested skeleton import, but no bones found on the first pass. Trying heuristics\n");
+
+			const auto &dict = std::get<NIFDictionary>(*std::get<NIFReference>(roots.front()).ptr);
+			if (!dict.kindOf("NiNode"))
+				throw std::runtime_error("Skeleton import is requested, but no NiNode at root level");
+
+			const auto &children = dict.getValue<NIFArray>("Children");
+
+			for (auto name : m_rootBoneNames) {
+				for (const auto &child : children.data) {
+					const auto &ref = std::get<NIFReference>(child);
+					if (!ref.ptr)
+						continue;
+
+					const auto &childDict = std::get<NIFDictionary>(*ref.ptr);
+					if (nodeName(childDict) == name) {
+						fprintf(stderr, "Found '%s'\n", name);
+
+						m_commonBoneRoot = ref.ptr;
+
+						markBones(ref);
+
+						goto breakOuter;
+					}
+				}
+			}
+		breakOuter:;
+			
+		}
+
+		if (m_commonBoneRoot) {
 			printf("Skeleton root: %s\nAll bones, unordered:\n", nodeName(std::get<NIFDictionary>(*m_commonBoneRoot)).c_str());
 			for (const auto &bone : m_allBones) {
 				printf(" - %s\n", nodeName(std::get<NIFDictionary>(*bone)).c_str());
 			}
 
-			if(m_cleaningRequired)
+			if (m_cleaningRequired)
 				processNode(nifRoot);
 		}
-
 	}
 
 	void SkeletonProcessor::processNode(const NIFReference &node) {
@@ -361,7 +402,21 @@ namespace fbxnif {
 			}
 		}
 	}
-	
+
+	void SkeletonProcessor::markBones(const NIFReference &node) {
+		auto &dict = std::get<NIFDictionary>(*node.ptr);
+		if (dict.kindOf("NiNode")) {
+			m_allBones.emplace(node.ptr);
+
+			NIFArray childrenCopy = dict.getValue<NIFArray>("Children");
+			for (const auto &child : childrenCopy.data) {
+				const auto &childDesc = std::get<NIFReference>(child);
+				if (childDesc.ptr)
+					markBones(childDesc);
+			}
+		}
+	}
+
 	FbxAMatrix SkeletonProcessor::getLocalTransform(const NIFDictionary &node) const {
 		return FbxAMatrix(
 			getVector3(node.getValue<NIFDictionary>("Translation")),

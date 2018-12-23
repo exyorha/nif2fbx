@@ -28,12 +28,16 @@ namespace fbxnif {
 		inline const std::unordered_set<std::shared_ptr<NIFVariant>> &allBones() const { return m_allBones; }
 		inline const std::shared_ptr<NIFVariant> &commonBoneRoot() const { return m_commonBoneRoot; }
 
+		inline bool skeletonImport() const { return m_skeletonImport; }
+		inline void setSkeletonImport(bool skeletonImport) { m_skeletonImport = skeletonImport; }
+
 	private:
 		void collectSkinsAndParents(const NIFReference &node, const std::shared_ptr<NIFVariant> &parentNode);
 		std::shared_ptr<NIFVariant> getParentOfNode(const std::shared_ptr<NIFVariant> &node);
 		void processNode(const NIFReference &node);
 		void processNodeInSkeleton(const NIFReference &node);
-		
+		void markBones(const NIFReference &node);
+
 		std::string nodeName(const NIFDictionary &node) const;
 
 		FbxAMatrix getLocalTransform(const NIFDictionary &node) const;
@@ -49,6 +53,9 @@ namespace fbxnif {
 		std::shared_ptr<NIFVariant> m_commonBoneRoot;
 		std::unordered_set<std::shared_ptr<NIFVariant>> m_allBones;
 		bool m_cleaningRequired;
+		bool m_skeletonImport;
+
+		static const char *const m_rootBoneNames[];
 	};
 }
 

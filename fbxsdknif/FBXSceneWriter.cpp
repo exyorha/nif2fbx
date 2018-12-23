@@ -24,6 +24,9 @@ namespace fbxnif {
 	void FBXSceneWriter::write(FbxDocument *document) {
 		m_scene = FbxCast<FbxScene>(document);
 
+		m_meshesGenerated = 0;
+		m_skeletonNodesGenerated = 0;
+
 		if (m_file.rootObjects().data.empty()) {
 			throw std::runtime_error("no root object in NIF");
 		}
@@ -32,6 +35,31 @@ namespace fbxnif {
 		FbxSystemUnit(1.4287109375).ConvertScene(m_scene);
 
 		convertSceneNode(std::get<NIFReference>(m_file.rootObjects().data.front()), m_scene->GetRootNode());
+
+		if (m_meshesGenerated == 0 && m_skeletonNodesGenerated >= 0 /* && m_animationsGenerated == 0 */) {
+			fprintf(stderr, "FBXSceneWriter: skeleton-only FBX generated, adding null geometry\n");
+
+			auto firstRootChild = m_scene->GetRootNode()->GetChild(0);
+			auto node = FbxNode::Create(m_scene, "DummyGeneratedNode");
+			firstRootChild->AddChild(node);
+			auto mesh = FbxMesh::Create(m_scene, "DummyGeneratedNode Mesh");
+			node->AddNodeAttribute(mesh);
+			mesh->InitControlPoints(1);
+			mesh->SetControlPointAt(FbxVector4(0.0f, 0.0f, 0.0f, 0.0f), 0);
+			mesh->ReservePolygonCount(1);
+			mesh->BeginPolygon();
+			mesh->AddPolygon(0); mesh->AddPolygon(0); mesh->AddPolygon(0);
+			mesh->EndPolygon();
+			auto it = m_nodeMap.find(m_skeleton.commonBoneRoot());
+			auto root = it->second;
+			auto fbxSkin = FbxSkin::Create(m_scene, "");
+			auto cluster = FbxCluster::Create(m_scene, "");
+			cluster->SetLink(root);
+			cluster->SetLinkMode(FbxCluster::eTotalOne);
+			cluster->AddControlPointIndex(0, 1.0);
+			fbxSkin->AddCluster(cluster);
+			mesh->AddDeformer(fbxSkin);
+		}
 	}
 
 	void FBXSceneWriter::convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
@@ -78,6 +106,8 @@ namespace fbxnif {
 			else {
 				skeleton->SetSkeletonType(FbxSkeleton::eLimbNode);
 			}
+
+			m_skeletonNodesGenerated++;
 		}
 
 		if (dict.kindOf("NiNode")) {
@@ -118,6 +148,8 @@ namespace fbxnif {
 
 		auto mesh = FbxMesh::Create(m_scene, (std::string(node->GetName()) + " Mesh").c_str());
 		node->AddNodeAttribute(mesh);
+
+		m_meshesGenerated++;
 		
 		const auto &data = std::get<NIFDictionary>(*dict.getValue<NIFReference>("Data").ptr);
 
@@ -270,6 +302,8 @@ namespace fbxnif {
 	void FBXSceneWriter::convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
 		auto mesh = FbxMesh::Create(m_scene, (std::string(node->GetName()) + " Mesh").c_str());
 		node->AddNodeAttribute(mesh);
+
+		m_meshesGenerated++;
 
 		auto numVertices = dict.getValue<uint32_t>("Num Vertices");
 
