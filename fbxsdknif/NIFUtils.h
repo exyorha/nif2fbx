@@ -18,7 +18,9 @@ namespace fbxnif {
 	FbxColor getByteColor4(const NIFDictionary &dict);
 	FbxVector2 getTexCoord(const NIFDictionary &dict);
 	FbxAMatrix getTransform(const NIFDictionary &dict);
+	FbxAMatrix getQuatTransform(const NIFDictionary &dict);
 	FbxVector4 getByteVector3(const NIFDictionary &dict);
+	FbxQuaternion getQuaternion(const NIFDictionary &dict);
 
 	NIFDictionary makeVector3(const FbxVector4 &vector);
 	NIFDictionary makeMatrix3x3(const FbxAMatrix &matrix);

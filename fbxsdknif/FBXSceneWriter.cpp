@@ -6,9 +6,15 @@
 #include <fbxsdk/scene/geometry/fbxcluster.h>
 #include <fbxsdk/fileio/fbximporter.h>
 #include <fbxsdk/utils/fbxclonemanager.h>
+#include <fbxsdk/scene/animation/fbxanimstack.h>
+#include <fbxsdk/scene/animation/fbxanimlayer.h>
+#include <fbxsdk/scene/animation/fbxanimcurve.h>
+#include <fbxsdk/scene/animation/fbxanimcurvenode.h>
 
 #include <nifparse/NIFFile.h>
 #include <nifparse/PrettyPrinter.h>
+
+#include <array>
 
 #include "FBXSceneWriter.h"
 #include "NIFUtils.h"
@@ -196,6 +202,10 @@ namespace fbxnif {
 			}
 
 			m_skeletonNodesGenerated++;
+		}
+
+		for (auto controller = dict.getValue<NIFReference>("Controller"); controller.ptr; controller = std::get<NIFDictionary>(*controller.ptr).getValue<NIFReference>("Next Controller")) {
+			processController(std::get<NIFDictionary>(*controller.ptr), node);
 		}
 
 		if (dict.kindOf("NiNode")) {
@@ -499,6 +509,241 @@ namespace fbxnif {
 		}
 
 		importMeshTriangles(mesh, dict);
+	}
+
+	template<typename PropertyType>
+	void FBXSceneWriter::generateCurves(const NIFDictionary &keyGroup, FbxPropertyT<PropertyType> &prop, FbxAnimLayer *layer, CurveGenerationMode mode, FbxAnimCurveNode *&node) {
+		auto numKeys = keyGroup.getValue<uint32_t>("Num Keys");
+		if (numKeys > 0) {
+			
+			const auto &interpolation = keyGroup.getValue<NIFEnum>("Interpolation");
+			const auto &keys = keyGroup.getValue<NIFArray>("Keys");
+
+			if (!node) {
+				node = prop.CreateCurveNode(layer);
+
+				//node = FbxAnimCurveNode::CreateTypedCurveNode(prop, m_scene);
+				//layer->AddMember(node);
+				//prop.ConnectSrcObject(node);
+
+			}
+
+			std::array<FbxAnimCurve *, 3> curves{ nullptr, nullptr, nullptr };
+
+			if (mode == CurveGenerationMode::Translation) {
+				curves[0] = FbxAnimCurve::Create(m_scene, "");
+				curves[1] = FbxAnimCurve::Create(m_scene, "");
+				curves[2] = FbxAnimCurve::Create(m_scene, "");
+
+				node->ConnectToChannel(curves[0], 0U);
+				node->ConnectToChannel(curves[1], 1U);
+				node->ConnectToChannel(curves[2], 2U);
+			}
+			else if (mode == CurveGenerationMode::Scaling) {
+				curves[0] = FbxAnimCurve::Create(m_scene, "");
+
+				node->ConnectToChannel(curves[0], 0U);
+				node->ConnectToChannel(curves[0], 1U);
+				node->ConnectToChannel(curves[0], 2U);
+			}
+
+			for (auto curve : curves) {
+				if (curve) {
+					curve->KeyModifyBegin();
+				}
+			}
+
+			for (const auto &keyVal : keys.data) {
+				const auto &key = std::get<NIFDictionary>(keyVal);
+
+				FbxTime time;
+				time.SetSecondDouble(key.getValue<float>("Time"));
+
+				if (mode == CurveGenerationMode::Translation) {
+					const auto &value = getVector3(key.getValue<NIFDictionary>("Value"));
+
+					FbxAnimCurveKey xKey;
+					FbxAnimCurveKey yKey;
+					FbxAnimCurveKey zKey;
+
+					if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
+						const auto &tbc = key.getValue<NIFDictionary>("TBC");
+
+						xKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						xKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+						xKey.SetTCB(time, static_cast<float>(value[0]),
+							tbc.getValue<float>("t"),
+							tbc.getValue<float>("c"),
+							tbc.getValue<float>("b"));
+
+						yKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						yKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+						yKey.SetTCB(time, static_cast<float>(value[1]),
+							tbc.getValue<float>("t"),
+							tbc.getValue<float>("c"),
+							tbc.getValue<float>("b"));
+
+						zKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						zKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+						zKey.SetTCB(time, static_cast<float>(value[2]),
+							tbc.getValue<float>("t"),
+							tbc.getValue<float>("c"),
+							tbc.getValue<float>("b"));
+					}
+					else if (interpolation.symbolicValue == Symbol("QUADRATIC_KEY")) {
+						const auto &ftangent = getVector3(key.getValue<NIFDictionary>("Forward"));
+						const auto &btangent = getVector3(key.getValue<NIFDictionary>("Backward"));
+
+						xKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						xKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+						xKey.Set(time, static_cast<float>(value[0]));
+						xKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[0]));
+						xKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[0]));
+
+						yKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						yKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+						yKey.Set(time, static_cast<float>(value[1]));
+						yKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[1]));
+						yKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[1]));
+
+						zKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						zKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+						zKey.Set(time, static_cast<float>(value[2]));
+						zKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[2]));
+						zKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[2]));
+					}
+					else { // LINEAR_KEY and any others
+						xKey.Set(time, static_cast<float>(value[0]));
+						yKey.Set(time, static_cast<float>(value[1]));
+						zKey.Set(time, static_cast<float>(value[2]));
+					}
+
+					curves[0]->KeyAdd(time, xKey);
+					curves[1]->KeyAdd(time, yKey);
+					curves[2]->KeyAdd(time, zKey);
+				}
+				else if (mode == CurveGenerationMode::Scaling) {
+					auto value = key.getValue<float>("Value");
+
+					FbxAnimCurveKey skey;
+
+					if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
+						const auto &tbc = key.getValue<NIFDictionary>("TBC");
+
+						skey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						skey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+						skey.SetTCB(time, value,
+							tbc.getValue<float>("t"),
+							tbc.getValue<float>("c"),
+							tbc.getValue<float>("b"));
+
+					}
+					else if (interpolation.symbolicValue == Symbol("QUADRATIC_KEY")) {
+						auto ftangent = key.getValue<float>("Forward");
+						auto btangent = key.getValue<float>("Backward");
+
+						skey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+						skey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+						skey.Set(time, static_cast<float>(value));
+						skey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, ftangent);
+						skey.SetDataFloat(FbxAnimCurveDef::eRightSlope, btangent);
+					}
+					else { // LINEAR_KEY and any others
+						skey.Set(time, static_cast<float>(value));
+					}
+
+					curves[0]->KeyAdd(time, skey);
+				}
+			}
+
+			for (auto curve : curves) {
+				if (curve) {
+					curve->KeyModifyEnd();
+				}
+			}
+		}
+	}
+
+	void FBXSceneWriter::processController(const NIFDictionary &controller, FbxNode *node) {
+		if (controller.kindOf("NiKeyframeController")) {
+			printf("Keyframe controller on %s\n", node->GetName());
+
+			NIFReference data;
+
+			if (controller.data.count("Interpolator") != 0) {
+				const auto &interpolator = std::get<NIFDictionary>(*controller.getValue<NIFReference>("Interpolator").ptr);
+
+				if (!interpolator.kindOf("NiTransformInterpolator")) {
+					fprintf(stderr, "Unsupported interpolator on NiKeyframeController: %s\n", interpolator.typeChain.back().toString());
+					return;
+				}
+
+				data = interpolator.getValue<NIFReference>("Data");
+
+				if (!data.ptr) {
+					const auto &quatTransform = getQuatTransform(interpolator.getValue<NIFDictionary>("Transform"));
+
+					node->LclTranslation = quatTransform.GetT();
+					node->LclRotation = quatTransform.GetR();
+					node->LclScaling = quatTransform.GetS();
+				}				
+			}
+			else {
+				data = controller.getValue<NIFReference>("Data");
+			}
+
+			if (!data.ptr) {
+				fprintf(stderr, "Keyframe controller on %s has no data\n", node->GetName());
+
+				return;
+			}
+
+			const auto &dataDict = std::get<NIFDictionary>(*data.ptr);
+
+			static FbxAnimStack *stack;
+
+			if (!stack) {
+				stack = FbxAnimStack::Create(m_scene, "default");
+
+				FbxTime startTime;
+				startTime.SetSecondDouble(controller.getValue<float>("Start Time"));
+
+				FbxTime stopTime;
+				stopTime.SetSecondDouble(controller.getValue<float>("Stop Time"));
+
+				stack->LocalStart = startTime;
+				stack->LocalStop = stopTime;
+				stack->ReferenceStart = startTime;
+				stack->ReferenceStop = stopTime;
+			}
+
+			static FbxAnimLayer *layer;
+
+			if (!layer) {
+				layer = FbxAnimLayer::Create(m_scene, "base layer");
+				stack->AddMember(layer);
+			}
+			
+
+			auto numRotationKeys = dataDict.getValue<uint32_t>("Num Rotation Keys");
+			if (numRotationKeys != 0) {
+				__debugbreak();
+			}
+
+			const auto &translations = dataDict.getValue<NIFDictionary>("Translations");
+
+			FbxAnimCurveNode *translationNode = nullptr;
+			generateCurves(translations, node->LclTranslation, layer, CurveGenerationMode::Translation, translationNode);
+
+			const auto &scales = dataDict.getValue<NIFDictionary>("Scales");
+
+			FbxAnimCurveNode *scaleNode = nullptr;
+			generateCurves(scales, node->LclScaling, layer, CurveGenerationMode::Scaling, scaleNode);
+
+		}
+		else {
+			fprintf(stderr, "unsupported controller of type %s on node %s\n", controller.typeChain.front().toString(), node->GetName());
+		}
 	}
 
 }

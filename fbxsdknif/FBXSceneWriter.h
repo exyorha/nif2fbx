@@ -19,6 +19,7 @@ namespace fbxsdk {
 	class FbxDocument;
 	class FbxNode;
 	class FbxScene;
+	class FbxAnimCurve;
 }
 
 namespace fbxnif {
@@ -49,6 +50,12 @@ namespace fbxnif {
 		void convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node);
 		void convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node);
 
+		enum class CurveGenerationMode {
+			Rotation,
+			Translation,
+			Scaling
+		};
+
 		template<typename ElementType>
 		void importVectorElement(const NIFDictionary &data, FbxMesh *mesh, const Symbol &name, ElementType *(FbxGeometryBase::*createElement)());
 		
@@ -56,6 +63,11 @@ namespace fbxnif {
 
 		FbxNode *findSkeletonRoot(FbxNode *parent);
 		void registerImportedBones(FbxNode *bone);
+
+		void processController(const NIFDictionary &controller, FbxNode *node);
+
+		template<typename PropertyType>
+		void generateCurves(const NIFDictionary &keyGroup, FbxPropertyT<PropertyType> &prop, FbxAnimLayer *layer, CurveGenerationMode mode, FbxAnimCurveNode *&node);
 
 		const NIFFile &m_file;
 		const SkeletonProcessor &m_skeleton;

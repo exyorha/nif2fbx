@@ -133,4 +133,49 @@ namespace fbxnif {
 
 		return dict;
 	}
+
+	FbxAMatrix getQuatTransform(const NIFDictionary &dict) {
+		FbxAMatrix transform;
+
+		bool tValid = true, rValid = true, sValid = true;
+
+		if (dict.data.count("TRS Valid") != 0) {
+			const auto &trs = dict.getValue<NIFArray>("TRS Valid");
+			tValid = std::get<uint32_t>(trs.data[0]) != 0;
+			rValid = std::get<uint32_t>(trs.data[1]) != 0;
+			sValid = std::get<uint32_t>(trs.data[2]) != 0;
+		}
+
+		if (tValid) {
+			auto translation = getVector3(dict.getValue<NIFDictionary>("Translation"));
+			if (isfinite(translation[0]) && isfinite(translation[1]) && isfinite(translation[2])) {
+				transform.SetT(translation);
+			}
+		}
+
+		if (rValid) {
+			auto rotation = getQuaternion(dict.getValue<NIFDictionary>("Rotation"));
+			if (isfinite(rotation[0]) && isfinite(rotation[1]) && isfinite(rotation[2]) && isfinite(rotation[3])) {
+				transform.SetQ(rotation);
+			}
+		}
+
+		if (sValid) {
+			auto scale = dict.getValue<float>("Scale");
+			if (isfinite(scale)) {
+				transform.SetS(FbxVector4(scale, scale, scale, 1.0f));
+			}
+		}
+
+		return transform;
+	}
+
+	FbxQuaternion getQuaternion(const NIFDictionary &dict) {
+		return FbxQuaternion(
+			dict.getValue<float>("x"),
+			dict.getValue<float>("y"),
+			dict.getValue<float>("z"),
+			dict.getValue<float>("w")
+		);
+	}
 }
