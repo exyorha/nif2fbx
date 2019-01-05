@@ -134,6 +134,10 @@ namespace fbxnif {
 		return dict;
 	}
 
+	static inline bool isOkayTransformValue(float val) {
+		return isfinite<float>(val) && val > -1e38f && val < 1e38f;
+	}
+
 	FbxAMatrix getQuatTransform(const NIFDictionary &dict) {
 		FbxAMatrix transform;
 
@@ -148,21 +152,21 @@ namespace fbxnif {
 
 		if (tValid) {
 			auto translation = getVector3(dict.getValue<NIFDictionary>("Translation"));
-			if (isfinite(translation[0]) && isfinite(translation[1]) && isfinite(translation[2])) {
+			if (isOkayTransformValue(translation[0]) && isOkayTransformValue(translation[1]) && isOkayTransformValue(translation[2])) {
 				transform.SetT(translation);
 			}
 		}
 
 		if (rValid) {
 			auto rotation = getQuaternion(dict.getValue<NIFDictionary>("Rotation"));
-			if (isfinite(rotation[0]) && isfinite(rotation[1]) && isfinite(rotation[2]) && isfinite(rotation[3])) {
+			if (isOkayTransformValue(rotation[0]) && isOkayTransformValue(rotation[1]) && isOkayTransformValue(rotation[2]) && isOkayTransformValue(rotation[3])) {
 				transform.SetQ(rotation);
 			}
 		}
 
 		if (sValid) {
 			auto scale = dict.getValue<float>("Scale");
-			if (isfinite(scale)) {
+			if (isOkayTransformValue(scale)) {
 				transform.SetS(FbxVector4(scale, scale, scale, 1.0f));
 			}
 		}
@@ -179,9 +183,11 @@ namespace fbxnif {
 		);
 	}
 
-	std::string getStringFromPalette(const NIFDictionary &dict, const NIFDictionary &palette) {
-		__debugbreak();
+	std::string getStringFromPalette(uint32_t offset, const NIFDictionary &palette) {
+		const auto &string = palette.getValue<NIFDictionary>("Palette").getValue<NIFDictionary>("Palette").getValue<std::string>("Value");
 
-		return {};
+		auto stringEnd = string.find('\0', offset);
+
+		return string.substr(offset, stringEnd - offset);
 	}
 }

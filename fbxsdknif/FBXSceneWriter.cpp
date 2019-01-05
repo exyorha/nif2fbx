@@ -49,6 +49,10 @@ namespace fbxnif {
 
 		if (rootDict.kindOf("NiAVObject")) {
 			convertSceneNode(root, m_scene->GetRootNode());
+
+			for (auto &pair : m_deferredTriBasedGeoms) {
+				convertNiTriBasedGeom(*pair.first, pair.second);
+			}
 		}
 		else if (rootDict.kindOf("NiSequence")) {
 			ensureSkeletonImported(m_scene->GetRootNode());
@@ -243,7 +247,7 @@ namespace fbxnif {
 			convertNiNode(dict, node);
 		}
 		else if (dict.kindOf("NiTriBasedGeom")) {
-			convertNiTriBasedGeom(dict, node);
+			m_deferredTriBasedGeoms.emplace_back(std::make_pair(&dict, node));
 		}
 		else if (dict.isA("BSTriShape")) {
 			convertBSTriShape(dict, node);
@@ -762,22 +766,33 @@ namespace fbxnif {
 			NIFReference data;
 
 			if (controller.data.count("Interpolator") != 0) {
-				const auto &interpolator = std::get<NIFDictionary>(*controller.getValue<NIFReference>("Interpolator").ptr);
+				const auto &interpolatorPtr = controller.getValue<NIFReference>("Interpolator");
+				if (!interpolatorPtr.ptr) {
+					fprintf(stderr, "Keyframe controller on %s has no interpolator\n", node->GetName());
+
+					return;
+				}
+
+				const auto &interpolator = std::get<NIFDictionary>(*interpolatorPtr.ptr);
 
 				if (!interpolator.kindOf("NiTransformInterpolator")) {
-					fprintf(stderr, "Unsupported interpolator on NiKeyframeController: %s\n", interpolator.typeChain.back().toString());
+					fprintf(stderr, "Unsupported interpolator on NiKeyframeController: %s\n", interpolator.typeChain.front().toString());
 					return;
 				}
 
 				data = interpolator.getValue<NIFReference>("Data");
 
+#if 0 // Causes problems with bind pose generation: 'default transform' is different from bind pose transform
 				if (!data.ptr) {
 					const auto &quatTransform = getQuatTransform(interpolator.getValue<NIFDictionary>("Transform"));
+
+					printf("setting transform of %s to default, because interpolator has no data\n", node->GetName());
 
 					node->LclTranslation = quatTransform.GetT();
 					node->LclRotation = quatTransform.GetR();
 					node->LclScaling = quatTransform.GetS();
 				}
+#endif
 			}
 			else {
 				data = controller.getValue<NIFReference>("Data");
@@ -897,7 +912,7 @@ namespace fbxnif {
 				targetNode = getString(blockDict.getValue<NIFDictionary>("Target Name"), m_file.header());
 			}
 			else if (blockDict.data.count("Node Name Offset") != 0) {
-				targetNode = getStringFromPalette(blockDict.getValue<NIFDictionary>("Target Name Offset"), std::get<NIFDictionary>(*palette.ptr));
+				targetNode = getStringFromPalette(blockDict.getValue<uint32_t>("Node Name Offset"), std::get<NIFDictionary>(*palette.ptr));
 			}
 			else {
 				targetNode = getString(blockDict.getValue<NIFDictionary>("Node Name"), m_file.header());				
@@ -921,7 +936,7 @@ namespace fbxnif {
 				std::string controllerTypeName;
 
 				if (blockDict.data.count("Controller Type Offset") != 0) {
-					controllerTypeName = getStringFromPalette(blockDict.getValue<NIFDictionary>("Controller Type Offset"), std::get<NIFDictionary>(*palette.ptr));
+					controllerTypeName = getStringFromPalette(blockDict.getValue<uint32_t>("Controller Type Offset"), std::get<NIFDictionary>(*palette.ptr));
 				}
 				else {
 					controllerTypeName = getString(blockDict.getValue<NIFDictionary>("Controller Type"), m_file.header());

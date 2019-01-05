@@ -99,6 +99,7 @@ namespace fbxnif {
 		std::vector<const NIFDictionary *> m_controllerManagers;
 		bool m_skeletonImported;
 		std::vector<AnimationTake> m_animationTakes;
+		std::vector<std::pair<const NIFDictionary *, FbxNode *>> m_deferredTriBasedGeoms;
 	};
 }
 
