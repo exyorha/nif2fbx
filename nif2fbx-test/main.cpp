@@ -88,8 +88,13 @@ int main(int argc, char *argv[]) {
 		//ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
 	}))
 		return 1;*/
-
+	/*
 	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\dwebrentrance01.nif", "C:\\projects\\nifparse\\meshes\\dwebrentrance01.fbx", [](fbxsdk::FbxIOSettings *ios) {
+		//ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
+	}))
+		return 1;
+	*/
+	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\azura.nif", "C:\\projects\\nifparse\\meshes\\azura.fbx", [](fbxsdk::FbxIOSettings *ios) {
 		//ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
 	}))
 		return 1;

@@ -10,6 +10,7 @@
 #include <fbxsdk/scene/animation/fbxanimlayer.h>
 #include <fbxsdk/scene/animation/fbxanimcurve.h>
 #include <fbxsdk/scene/animation/fbxanimcurvenode.h>
+#include <fbxsdk/scene/animation/fbxanimcurvefilters.h>
 
 #include <nifparse/NIFFile.h>
 #include <nifparse/PrettyPrinter.h>
@@ -511,156 +512,216 @@ namespace fbxnif {
 		importMeshTriangles(mesh, dict);
 	}
 
+
 	template<typename PropertyType>
 	void FBXSceneWriter::generateCurves(const NIFDictionary &keyGroup, FbxPropertyT<PropertyType> &prop, FbxAnimLayer *layer, CurveGenerationMode mode, FbxAnimCurveNode *&node) {
 		auto numKeys = keyGroup.getValue<uint32_t>("Num Keys");
 		if (numKeys > 0) {
-			
+
 			const auto &interpolation = keyGroup.getValue<NIFEnum>("Interpolation");
 			const auto &keys = keyGroup.getValue<NIFArray>("Keys");
 
-			if (!node) {
-				node = prop.CreateCurveNode(layer);
+			generateCurves(interpolation, keys, prop, layer, mode, node);
+		}
+	}
 
-				//node = FbxAnimCurveNode::CreateTypedCurveNode(prop, m_scene);
-				//layer->AddMember(node);
-				//prop.ConnectSrcObject(node);
+	template<typename PropertyType>
+	void FBXSceneWriter::generateCurves(const NIFEnum &interpolation, const NIFArray &keys, FbxPropertyT<PropertyType> &prop, FbxAnimLayer *layer, CurveGenerationMode mode, FbxAnimCurveNode *&node) {
+		if (!node) {
+			node = prop.CreateCurveNode(layer);
+		}
 
+		std::array<FbxAnimCurve *, 3> curves{ nullptr, nullptr, nullptr };
+
+		if (mode == CurveGenerationMode::Translation || mode == CurveGenerationMode::RotationQuaternion) {
+			curves[0] = FbxAnimCurve::Create(m_scene, "");
+			curves[1] = FbxAnimCurve::Create(m_scene, "");
+			curves[2] = FbxAnimCurve::Create(m_scene, "");
+
+			node->ConnectToChannel(curves[0], 0U);
+			node->ConnectToChannel(curves[1], 1U);
+			node->ConnectToChannel(curves[2], 2U);
+		}
+		else if (mode == CurveGenerationMode::Scaling) {
+			curves[0] = FbxAnimCurve::Create(m_scene, "");
+
+			node->ConnectToChannel(curves[0], 0U);
+			node->ConnectToChannel(curves[0], 1U);
+			node->ConnectToChannel(curves[0], 2U);
+		}
+		else if (mode == CurveGenerationMode::RotationX) {
+			curves[0] = FbxAnimCurve::Create(m_scene, "");
+			node->ConnectToChannel(curves[0], 0U);
+		}
+		else if (mode == CurveGenerationMode::RotationY) {
+			curves[0] = FbxAnimCurve::Create(m_scene, "");
+			node->ConnectToChannel(curves[0], 1U);
+		}
+		else if (mode == CurveGenerationMode::RotationZ) {
+			curves[0] = FbxAnimCurve::Create(m_scene, "");
+			node->ConnectToChannel(curves[0], 2U);
+		}
+
+		for (auto curve : curves) {
+			if (curve) {
+				curve->KeyModifyBegin();
 			}
+		}
 
-			std::array<FbxAnimCurve *, 3> curves{ nullptr, nullptr, nullptr };
+		for (const auto &keyVal : keys.data) {
+			const auto &key = std::get<NIFDictionary>(keyVal);
+
+			FbxTime time;
+			time.SetSecondDouble(key.getValue<float>("Time"));
 
 			if (mode == CurveGenerationMode::Translation) {
-				curves[0] = FbxAnimCurve::Create(m_scene, "");
-				curves[1] = FbxAnimCurve::Create(m_scene, "");
-				curves[2] = FbxAnimCurve::Create(m_scene, "");
+				const auto &value = getVector3(key.getValue<NIFDictionary>("Value"));
 
-				node->ConnectToChannel(curves[0], 0U);
-				node->ConnectToChannel(curves[1], 1U);
-				node->ConnectToChannel(curves[2], 2U);
-			}
-			else if (mode == CurveGenerationMode::Scaling) {
-				curves[0] = FbxAnimCurve::Create(m_scene, "");
+				FbxAnimCurveKey xKey;
+				FbxAnimCurveKey yKey;
+				FbxAnimCurveKey zKey;
 
-				node->ConnectToChannel(curves[0], 0U);
-				node->ConnectToChannel(curves[0], 1U);
-				node->ConnectToChannel(curves[0], 2U);
-			}
+				if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
+					const auto &tbc = key.getValue<NIFDictionary>("TBC");
 
-			for (auto curve : curves) {
-				if (curve) {
-					curve->KeyModifyBegin();
+					xKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					xKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+					xKey.SetTCB(time, static_cast<float>(value[0]),
+						tbc.getValue<float>("t"),
+						tbc.getValue<float>("c"),
+						tbc.getValue<float>("b"));
+
+					yKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					yKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+					yKey.SetTCB(time, static_cast<float>(value[1]),
+						tbc.getValue<float>("t"),
+						tbc.getValue<float>("c"),
+						tbc.getValue<float>("b"));
+
+					zKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					zKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+					zKey.SetTCB(time, static_cast<float>(value[2]),
+						tbc.getValue<float>("t"),
+						tbc.getValue<float>("c"),
+						tbc.getValue<float>("b"));
 				}
-			}
+				else if (interpolation.symbolicValue == Symbol("QUADRATIC_KEY")) {
+					const auto &ftangent = getVector3(key.getValue<NIFDictionary>("Forward"));
+					const auto &btangent = getVector3(key.getValue<NIFDictionary>("Backward"));
 
-			for (const auto &keyVal : keys.data) {
-				const auto &key = std::get<NIFDictionary>(keyVal);
+					xKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					xKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+					xKey.Set(time, static_cast<float>(value[0]));
+					xKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[0]));
+					xKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[0]));
 
-				FbxTime time;
-				time.SetSecondDouble(key.getValue<float>("Time"));
+					yKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					yKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+					yKey.Set(time, static_cast<float>(value[1]));
+					yKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[1]));
+					yKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[1]));
 
-				if (mode == CurveGenerationMode::Translation) {
-					const auto &value = getVector3(key.getValue<NIFDictionary>("Value"));
-
-					FbxAnimCurveKey xKey;
-					FbxAnimCurveKey yKey;
-					FbxAnimCurveKey zKey;
-
-					if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
-						const auto &tbc = key.getValue<NIFDictionary>("TBC");
-
-						xKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						xKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
-						xKey.SetTCB(time, static_cast<float>(value[0]),
-							tbc.getValue<float>("t"),
-							tbc.getValue<float>("c"),
-							tbc.getValue<float>("b"));
-
-						yKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						yKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
-						yKey.SetTCB(time, static_cast<float>(value[1]),
-							tbc.getValue<float>("t"),
-							tbc.getValue<float>("c"),
-							tbc.getValue<float>("b"));
-
-						zKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						zKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
-						zKey.SetTCB(time, static_cast<float>(value[2]),
-							tbc.getValue<float>("t"),
-							tbc.getValue<float>("c"),
-							tbc.getValue<float>("b"));
-					}
-					else if (interpolation.symbolicValue == Symbol("QUADRATIC_KEY")) {
-						const auto &ftangent = getVector3(key.getValue<NIFDictionary>("Forward"));
-						const auto &btangent = getVector3(key.getValue<NIFDictionary>("Backward"));
-
-						xKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						xKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
-						xKey.Set(time, static_cast<float>(value[0]));
-						xKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[0]));
-						xKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[0]));
-
-						yKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						yKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
-						yKey.Set(time, static_cast<float>(value[1]));
-						yKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[1]));
-						yKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[1]));
-
-						zKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						zKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
-						zKey.Set(time, static_cast<float>(value[2]));
-						zKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[2]));
-						zKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[2]));
-					}
-					else { // LINEAR_KEY and any others
-						xKey.Set(time, static_cast<float>(value[0]));
-						yKey.Set(time, static_cast<float>(value[1]));
-						zKey.Set(time, static_cast<float>(value[2]));
-					}
-
-					curves[0]->KeyAdd(time, xKey);
-					curves[1]->KeyAdd(time, yKey);
-					curves[2]->KeyAdd(time, zKey);
+					zKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					zKey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+					zKey.Set(time, static_cast<float>(value[2]));
+					zKey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, static_cast<float>(ftangent[2]));
+					zKey.SetDataFloat(FbxAnimCurveDef::eRightSlope, static_cast<float>(btangent[2]));
 				}
-				else if (mode == CurveGenerationMode::Scaling) {
-					auto value = key.getValue<float>("Value");
-
-					FbxAnimCurveKey skey;
-
-					if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
-						const auto &tbc = key.getValue<NIFDictionary>("TBC");
-
-						skey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						skey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
-						skey.SetTCB(time, value,
-							tbc.getValue<float>("t"),
-							tbc.getValue<float>("c"),
-							tbc.getValue<float>("b"));
-
-					}
-					else if (interpolation.symbolicValue == Symbol("QUADRATIC_KEY")) {
-						auto ftangent = key.getValue<float>("Forward");
-						auto btangent = key.getValue<float>("Backward");
-
-						skey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
-						skey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
-						skey.Set(time, static_cast<float>(value));
-						skey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, ftangent);
-						skey.SetDataFloat(FbxAnimCurveDef::eRightSlope, btangent);
-					}
-					else { // LINEAR_KEY and any others
-						skey.Set(time, static_cast<float>(value));
-					}
-
-					curves[0]->KeyAdd(time, skey);
+				else { // LINEAR_KEY and any others
+					xKey.Set(time, static_cast<float>(value[0]));
+					yKey.Set(time, static_cast<float>(value[1]));
+					zKey.Set(time, static_cast<float>(value[2]));
 				}
-			}
 
-			for (auto curve : curves) {
-				if (curve) {
-					curve->KeyModifyEnd();
-				}
+				curves[0]->KeyAdd(time, xKey);
+				curves[1]->KeyAdd(time, yKey);
+				curves[2]->KeyAdd(time, zKey);
 			}
+			else if (mode == CurveGenerationMode::Scaling || mode == CurveGenerationMode::RotationX || mode == CurveGenerationMode::RotationY || mode == CurveGenerationMode::RotationZ) {
+				auto value = key.getValue<float>("Value");
+
+				FbxAnimCurveKey skey;
+
+				if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
+					const auto &tbc = key.getValue<NIFDictionary>("TBC");
+
+					skey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					skey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+					skey.SetTCB(time, value,
+						tbc.getValue<float>("t"),
+						tbc.getValue<float>("c"),
+						tbc.getValue<float>("b"));
+
+				}
+				else if (interpolation.symbolicValue == Symbol("QUADRATIC_KEY")) {
+					auto ftangent = key.getValue<float>("Forward");
+					auto btangent = key.getValue<float>("Backward");
+
+					skey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					skey.SetTangentMode(FbxAnimCurveDef::eTangentUser);
+					skey.Set(time, static_cast<float>(value));
+					skey.SetDataFloat(FbxAnimCurveDef::eNextLeftSlope, ftangent);
+					skey.SetDataFloat(FbxAnimCurveDef::eRightSlope, btangent);
+				}
+				else { // LINEAR_KEY and any others
+					skey.Set(time, static_cast<float>(value));
+				}
+
+				curves[0]->KeyAdd(time, skey);
+			}
+			else if (mode == CurveGenerationMode::RotationQuaternion) {
+				FbxVector4 rotation;
+				rotation.SetXYZ(getQuaternion(key.getValue<NIFDictionary>("Value")));
+
+				FbxAnimCurveKey xKey;
+				FbxAnimCurveKey yKey;
+				FbxAnimCurveKey zKey;
+
+				if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
+					const auto &tbc = key.getValue<NIFDictionary>("TBC");
+
+					xKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					xKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+					xKey.SetTCB(time, static_cast<float>(rotation[0]),
+						tbc.getValue<float>("t"),
+						tbc.getValue<float>("c"),
+						tbc.getValue<float>("b"));
+
+					yKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					yKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+					yKey.SetTCB(time, static_cast<float>(rotation[1]),
+						tbc.getValue<float>("t"),
+						tbc.getValue<float>("c"),
+						tbc.getValue<float>("b"));
+
+					zKey.SetInterpolation(FbxAnimCurveDef::eInterpolationCubic);
+					zKey.SetTangentMode(FbxAnimCurveDef::eTangentTCB);
+					zKey.SetTCB(time, static_cast<float>(rotation[2]),
+						tbc.getValue<float>("t"),
+						tbc.getValue<float>("c"),
+						tbc.getValue<float>("b"));
+				}
+				else { // LINEAR_KEY and any others
+					xKey.Set(time, static_cast<float>(rotation[0]));
+					yKey.Set(time, static_cast<float>(rotation[1]));
+					zKey.Set(time, static_cast<float>(rotation[2]));
+				}
+
+				curves[0]->KeyAdd(time, xKey);
+				curves[1]->KeyAdd(time, yKey);
+				curves[2]->KeyAdd(time, zKey);
+			}
+		}
+
+		for (auto curve : curves) {
+			if (curve) {
+				curve->KeyModifyEnd();
+			}
+		}
+
+		if (mode == CurveGenerationMode::RotationQuaternion) {
+			FbxAnimCurveFilterUnroll unroller;
+			unroller.Apply(curves.data(), static_cast<int>(curves.size()));
 		}
 	}
 
@@ -727,7 +788,27 @@ namespace fbxnif {
 
 			auto numRotationKeys = dataDict.getValue<uint32_t>("Num Rotation Keys");
 			if (numRotationKeys != 0) {
-				__debugbreak();
+				const auto &rotationType = dataDict.getValue<NIFEnum>("Rotation Type");
+				
+				FbxAnimCurveNode *rotationNode = nullptr;
+
+				if (rotationType.symbolicValue == Symbol("XYZ_ROTATION_KEY")) {
+					auto &rotations = dataDict.getValue<NIFArray>("XYZ Rotations");
+
+					generateCurves(std::get<NIFDictionary>(rotations.data[0]), node->LclRotation, layer, CurveGenerationMode::RotationX, rotationNode);
+					generateCurves(std::get<NIFDictionary>(rotations.data[1]), node->LclRotation, layer, CurveGenerationMode::RotationY, rotationNode);
+					generateCurves(std::get<NIFDictionary>(rotations.data[2]), node->LclRotation, layer, CurveGenerationMode::RotationZ, rotationNode);
+				}
+				else {
+					generateCurves(
+						rotationType,
+						dataDict.getValue<NIFArray>("Quaternion Keys"),
+						node->LclRotation,
+						layer,
+						CurveGenerationMode::RotationQuaternion,
+						rotationNode);
+
+				}
 			}
 
 			const auto &translations = dataDict.getValue<NIFDictionary>("Translations");

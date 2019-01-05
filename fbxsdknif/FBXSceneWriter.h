@@ -53,7 +53,11 @@ namespace fbxnif {
 		enum class CurveGenerationMode {
 			Rotation,
 			Translation,
-			Scaling
+			Scaling,
+			RotationX,
+			RotationY,
+			RotationZ,
+			RotationQuaternion
 		};
 
 		template<typename ElementType>
@@ -68,6 +72,9 @@ namespace fbxnif {
 
 		template<typename PropertyType>
 		void generateCurves(const NIFDictionary &keyGroup, FbxPropertyT<PropertyType> &prop, FbxAnimLayer *layer, CurveGenerationMode mode, FbxAnimCurveNode *&node);
+
+		template<typename PropertyType>
+		void generateCurves(const NIFEnum &interpolation, const NIFArray &keys, FbxPropertyT<PropertyType> &prop, FbxAnimLayer *layer, CurveGenerationMode mode, FbxAnimCurveNode *&node);
 
 		const NIFFile &m_file;
 		const SkeletonProcessor &m_skeleton;
