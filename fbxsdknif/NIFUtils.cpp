@@ -178,4 +178,10 @@ namespace fbxnif {
 			dict.getValue<float>("w")
 		);
 	}
+
+	std::string getStringFromPalette(const NIFDictionary &dict, const NIFDictionary &palette) {
+		__debugbreak();
+
+		return {};
+	}
 }

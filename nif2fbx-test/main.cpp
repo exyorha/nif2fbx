@@ -37,7 +37,7 @@ bool convert(fbxsdk::FbxManager *manager, const char *from, const char *to, std:
 
 	auto exporter = fbxsdk::FbxExporter::Create(manager, "");
 	exporter->SetFileExportVersion(FBX_2013_00_COMPATIBLE);
-	status = exporter->Initialize(to, 1, manager->GetIOSettings());
+	status = exporter->Initialize(to, -1, manager->GetIOSettings());
 	if (!status) {
 		fprintf(stderr, "FbxExporter::Initialize failed: %s\n", exporter->GetStatus().GetErrorString());
 		return false;
@@ -83,6 +83,12 @@ int main(int argc, char *argv[]) {
 	}))
 		return 1;
 	*/
+	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\classic\\mtidle_hover.kf", "C:\\projects\\nifparse\\meshes\\mtidle_hover.fbx", [](fbxsdk::FbxIOSettings *ios) {
+		ios->SetStringProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Skeleton", "C:\\projects\\nifparse\\meshes\\skeleton.fbx");
+	}))
+		return 1;
+
+
 	/*
 	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\azura.nif", "C:\\projects\\nifparse\\meshes\\azura.fbx", [](fbxsdk::FbxIOSettings *ios) {
 		//ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
@@ -94,11 +100,12 @@ int main(int argc, char *argv[]) {
 	}))
 		return 1;
 	*/
+	/*
 	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\azura.nif", "C:\\projects\\nifparse\\meshes\\azura.fbx", [](fbxsdk::FbxIOSettings *ios) {
 		//ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
 	}))
 		return 1;
-
+	*/
 	manager->Destroy();
 
 	return 0;

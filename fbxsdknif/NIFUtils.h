@@ -12,6 +12,7 @@
 
 namespace fbxnif {
 	std::string getString(const NIFDictionary &dict, const NIFDictionary &header);
+	std::string getStringFromPalette(const NIFDictionary &dict, const NIFDictionary &palette);
 	FbxVector4 getVector3(const NIFDictionary &dict);
 	FbxAMatrix getMatrix3x3(const NIFDictionary &dict);
 	FbxColor getColor4(const NIFDictionary &dict);

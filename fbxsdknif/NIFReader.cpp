@@ -12,7 +12,7 @@
 #include "SkeletonProcessor.h"
 
 namespace fbxnif {
-	const char *const NIFReader::m_extensions[]{ "nif", nullptr };
+	const char *const NIFReader::m_extensions[]{ "nif", "kf", nullptr };
 	const char *const NIFReader::m_descriptions[]{ "Reader for NIF-formatted model files", nullptr };
 	
 	NIFReader::NIFReader(FbxManager &manager, int id) : FbxReader(manager, id, FbxStatusGlobal::GetRef()) {

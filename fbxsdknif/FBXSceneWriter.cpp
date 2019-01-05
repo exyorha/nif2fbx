@@ -44,36 +44,62 @@ namespace fbxnif {
 		FbxAxisSystem(FbxAxisSystem::eZAxis, FbxAxisSystem::eParityOdd, FbxAxisSystem::eRightHanded).ConvertScene(m_scene);
 		FbxSystemUnit(1.4287109375).ConvertScene(m_scene);
 
-		convertSceneNode(std::get<NIFReference>(m_file.rootObjects().data.front()), m_scene->GetRootNode());
+		const auto &root = std::get<NIFReference>(m_file.rootObjects().data.front());
+		const auto &rootDict = std::get<NIFDictionary>(*root.ptr);
+
+		if (rootDict.kindOf("NiAVObject")) {
+			convertSceneNode(root, m_scene->GetRootNode());
+		}
+		else if (rootDict.kindOf("NiSequence")) {
+			ensureSkeletonImported(m_scene->GetRootNode());
+
+			processControllerSequence(rootDict, NIFReference());
+
+			m_meshesGenerated++;
+		}
+
+		for (const auto manager : m_controllerManagers) {
+			const auto &palette = manager->getValue<NIFReference>("Object Palette");
+			const auto &sequences = manager->getValue<NIFArray>("Controller Sequences");
+
+			for (const auto &obj : sequences.data) {
+				const auto &ref = std::get<NIFReference>(obj);
+
+				if (ref.ptr) {
+					processControllerSequence(std::get<NIFDictionary>(*ref.ptr), palette);
+				}
+			}
+		}
 
 		if (m_meshesGenerated == 0 && m_skeletonNodesGenerated >= 0 /* && m_animationsGenerated == 0 */) {
 			fprintf(stderr, "FBXSceneWriter: skeleton-only FBX generated, adding null geometry\n");
 
 			auto firstRootChild = m_scene->GetRootNode()->GetChild(0);
-			auto node = FbxNode::Create(m_scene, "DummyGeneratedNode");
-			firstRootChild->AddChild(node);
-			auto mesh = FbxMesh::Create(m_scene, "DummyGeneratedNode Mesh");
-			node->AddNodeAttribute(mesh);
-			mesh->InitControlPoints(1);
-			mesh->SetControlPointAt(FbxVector4(0.0f, 0.0f, 0.0f, 0.0f), 0);
-			mesh->ReservePolygonCount(1);
-			mesh->BeginPolygon();
-			mesh->AddPolygon(0); mesh->AddPolygon(0); mesh->AddPolygon(0);
-			mesh->EndPolygon();
-			auto it = m_nodeMap.find(m_skeleton.commonBoneRoot());
-			auto root = it->second;
-			auto fbxSkin = FbxSkin::Create(m_scene, "");
-			auto cluster = FbxCluster::Create(m_scene, "");
-			cluster->SetLink(root);
-			cluster->SetLinkMode(FbxCluster::eTotalOne);
-			cluster->AddControlPointIndex(0, 1.0);
-			fbxSkin->AddCluster(cluster);
-			mesh->AddDeformer(fbxSkin);
+			if (!firstRootChild) {
+				auto node = FbxNode::Create(m_scene, "DummyGeneratedNode");
+				firstRootChild->AddChild(node);
+				auto mesh = FbxMesh::Create(m_scene, "DummyGeneratedNode Mesh");
+				node->AddNodeAttribute(mesh);
+				mesh->InitControlPoints(1);
+				mesh->SetControlPointAt(FbxVector4(0.0f, 0.0f, 0.0f, 0.0f), 0);
+				mesh->ReservePolygonCount(1);
+				mesh->BeginPolygon();
+				mesh->AddPolygon(0); mesh->AddPolygon(0); mesh->AddPolygon(0);
+				mesh->EndPolygon();
+				auto it = m_nodeMap.find(m_skeleton.commonBoneRoot());
+				auto root = it->second;
+				auto fbxSkin = FbxSkin::Create(m_scene, "");
+				auto cluster = FbxCluster::Create(m_scene, "");
+				cluster->SetLink(root);
+				cluster->SetLinkMode(FbxCluster::eTotalOne);
+				cluster->AddControlPointIndex(0, 1.0);
+				fbxSkin->AddCluster(cluster);
+				mesh->AddDeformer(fbxSkin);
+			}
 		}
 	}
 
-	void FBXSceneWriter::convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
-
+	void FBXSceneWriter::ensureSkeletonImported(FbxNode *node) {
 		if (!m_skeletonFile.IsEmpty() && !m_skeletonImported) {
 			m_skeletonImported = true;
 
@@ -121,6 +147,10 @@ namespace fbxnif {
 
 			registerImportedBones(newSkeletonRoot);
 		}
+	}
+
+	void FBXSceneWriter::convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
+		ensureSkeletonImported(node);
 
 		if (dict.typeChain.front() != Symbol("NiNode")) {
 			fprintf(stderr, "FBXSceneWriter: %s: unsupported NiNode subclass interpreted as NiNode: %s\n", node->GetName(), dict.typeChain.front().toString());
@@ -747,7 +777,7 @@ namespace fbxnif {
 					node->LclTranslation = quatTransform.GetT();
 					node->LclRotation = quatTransform.GetR();
 					node->LclScaling = quatTransform.GetS();
-				}				
+				}
 			}
 			else {
 				data = controller.getValue<NIFReference>("Data");
@@ -761,35 +791,12 @@ namespace fbxnif {
 
 			const auto &dataDict = std::get<NIFDictionary>(*data.ptr);
 
-			static FbxAnimStack *stack;
-
-			if (!stack) {
-				stack = FbxAnimStack::Create(m_scene, "default");
-
-				FbxTime startTime;
-				startTime.SetSecondDouble(controller.getValue<float>("Start Time"));
-
-				FbxTime stopTime;
-				stopTime.SetSecondDouble(controller.getValue<float>("Stop Time"));
-
-				stack->LocalStart = startTime;
-				stack->LocalStop = stopTime;
-				stack->ReferenceStart = startTime;
-				stack->ReferenceStop = stopTime;
-			}
-
-			static FbxAnimLayer *layer;
-
-			if (!layer) {
-				layer = FbxAnimLayer::Create(m_scene, "base layer");
-				stack->AddMember(layer);
-			}
-			
+			auto layer = getDefaultTakelayer(getCurrentTake());
 
 			auto numRotationKeys = dataDict.getValue<uint32_t>("Num Rotation Keys");
 			if (numRotationKeys != 0) {
 				const auto &rotationType = dataDict.getValue<NIFEnum>("Rotation Type");
-				
+
 				FbxAnimCurveNode *rotationNode = nullptr;
 
 				if (rotationType.symbolicValue == Symbol("XYZ_ROTATION_KEY")) {
@@ -820,11 +827,132 @@ namespace fbxnif {
 
 			FbxAnimCurveNode *scaleNode = nullptr;
 			generateCurves(scales, node->LclScaling, layer, CurveGenerationMode::Scaling, scaleNode);
+		} else if(controller.kindOf("NiControllerManager")) {
+			printf("NiControllerManager found, deferring\n");
 
+			m_controllerManagers.emplace_back(&controller);
 		}
 		else {
 			fprintf(stderr, "unsupported controller of type %s on node %s\n", controller.typeChain.front().toString(), node->GetName());
 		}
 	}
+
+	auto FBXSceneWriter::getCurrentTake() -> AnimationTake & {
+		if (m_animationTakes.empty()) {
+			AnimationTake take;
+			take.stack = FbxAnimStack::Create(m_scene, "default");
+
+			m_animationTakes.emplace_back(std::move(take));
+		}
+
+		return m_animationTakes.back();
+	}
+
+	FbxAnimLayer *FBXSceneWriter::getDefaultTakelayer(AnimationTake &take) {
+		if (!take.defaultLayer) {
+			take.defaultLayer = FbxAnimLayer::Create(m_scene, "base layer");
+			take.stack->AddMember(take.defaultLayer);
+		}
+
+		return take.defaultLayer;
+	}
+
+	void FBXSceneWriter::processControllerSequence(const NIFDictionary &sequence, const NIFReference &palette) {
+		auto sequenceName = getString(sequence.getValue<NIFDictionary>("Name"), m_file.header());
+
+		printf("Processing controller sequence %s\n", sequenceName.c_str());
+
+		auto stack = FbxAnimStack::Create(m_scene, sequenceName.c_str());
+
+		if (sequence.data.count("Start Time") != 0) {
+			FbxTime startTime;
+			startTime.SetSecondDouble(sequence.getValue<float>("Start Time"));
+
+			FbxTime stopTime;
+			stopTime.SetSecondDouble(sequence.getValue<float>("Stop Time"));
+
+			stack->LocalStart = startTime;
+			stack->LocalStop = stopTime;
+			stack->ReferenceStart = startTime;
+			stack->ReferenceStop = stopTime;
+		}
+
+		AnimationTake take;
+		take.stack = stack;
+		take.defaultLayer = nullptr;
+		m_animationTakes.emplace_back(std::move(take));
+
+		for (const auto &block : sequence.getValue<NIFArray>("Controlled Blocks").data) {
+			const auto &blockDict = std::get<NIFDictionary>(block);
+
+			NIFReference palette;
+
+			if (blockDict.data.count("String Palette") != 0) {
+				palette = blockDict.getValue<NIFReference>("String Palette");
+			}
+
+			std::string targetNode;
+
+			if (blockDict.data.count("Target Name") != 0) {
+				targetNode = getString(blockDict.getValue<NIFDictionary>("Target Name"), m_file.header());
+			}
+			else if (blockDict.data.count("Node Name Offset") != 0) {
+				targetNode = getStringFromPalette(blockDict.getValue<NIFDictionary>("Target Name Offset"), std::get<NIFDictionary>(*palette.ptr));
+			}
+			else {
+				targetNode = getString(blockDict.getValue<NIFDictionary>("Node Name"), m_file.header());				
+			}
+
+			printf("Controller block for %s\n", targetNode.c_str());
+
+			auto it = m_importedBoneMap.find(targetNode);
+			if (it == m_importedBoneMap.end()) {
+				fprintf(stderr, "Node %s, required by NiSequence, is not present in skeleton\n", targetNode.c_str());
+				continue;
+			}
+
+			auto node = it->second;
+
+			auto controller = blockDict.getValue<NIFReference>("Controller");
+			if (controller.ptr) {
+				processController(std::get<NIFDictionary>(*controller.ptr), node);
+			}
+			else {
+				std::string controllerTypeName;
+
+				if (blockDict.data.count("Controller Type Offset") != 0) {
+					controllerTypeName = getStringFromPalette(blockDict.getValue<NIFDictionary>("Controller Type Offset"), std::get<NIFDictionary>(*palette.ptr));
+				}
+				else {
+					controllerTypeName = getString(blockDict.getValue<NIFDictionary>("Controller Type"), m_file.header());
+				}
+
+				NIFVariant controllerValue;
+				controllerValue = NIFDictionary();
+				auto &controller = std::get<NIFDictionary>(controllerValue);
+
+				for (Symbol controllerType(controllerTypeName.c_str()); !controllerType.isNull(); controllerType = controllerType.parentType()) {
+					controller.typeChain.push_back(controllerType);
+				}
+
+				printf("No existing controller, creating new. Type chain: ");
+
+				for (const auto type : controller.typeChain) {
+					printf("'%s' ", type.toString());
+				}
+
+				printf("\n");
+
+				controller.data.emplace("Interpolator", blockDict.getValue<NIFReference>("Interpolator"));
+
+				processController(controller, node);
+
+			}
+		}
+
+		m_animationTakes.pop_back();
+
+	}
+
 
 }

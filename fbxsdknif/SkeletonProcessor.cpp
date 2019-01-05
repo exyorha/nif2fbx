@@ -46,7 +46,9 @@ namespace fbxnif {
 
 		auto &nifRoot = std::get<NIFReference>(roots.front());
 
-		collectSkinsAndParents(nifRoot, nullptr);
+		if (std::get<NIFDictionary>(*nifRoot.ptr).kindOf("NiAVObject")) {
+			collectSkinsAndParents(nifRoot, nullptr);
+		}
 
 		if (!m_skins.empty()) {
 			for (const auto &skinInfo : m_skins) {
