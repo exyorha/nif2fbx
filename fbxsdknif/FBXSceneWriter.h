@@ -87,6 +87,10 @@ namespace fbxnif {
 		
 		AnimationTake &getCurrentTake();
 		FbxAnimLayer *getDefaultTakelayer(AnimationTake &take);
+		
+		void processKeyframeAnimation(const NIFReference &data, FbxNode *node);
+		void applyInterpolatorTransform(const NIFDictionary &interpolator, FbxNode *node);
+		void processBSplineAnimation(const NIFDictionary &interpolator, FbxNode *node);
 
 		const NIFFile &m_file;
 		const SkeletonProcessor &m_skeleton;

@@ -33,6 +33,7 @@ if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
 endif()
 
 
+add_subdirectory(nifparse/halffloat)
 add_subdirectory(nifparse)
 add_subdirectory(fbxsdknif)
 add_subdirectory(nif2fbx-test)

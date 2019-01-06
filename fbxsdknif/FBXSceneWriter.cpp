@@ -20,6 +20,8 @@
 #include "FBXSceneWriter.h"
 #include "NIFUtils.h"
 #include "SkeletonProcessor.h"
+#include "BSplineTrackDefinition.h"
+#include "BSplineDataSet.h"
 
 namespace fbxnif {
 	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton) {
@@ -674,6 +676,10 @@ namespace fbxnif {
 			else if (mode == CurveGenerationMode::Scaling || mode == CurveGenerationMode::RotationX || mode == CurveGenerationMode::RotationY || mode == CurveGenerationMode::RotationZ) {
 				auto value = key.getValue<float>("Value");
 
+				if (mode == CurveGenerationMode::RotationX || mode == CurveGenerationMode::RotationY || mode == CurveGenerationMode::RotationZ) {
+					value *= static_cast<float>(FBXSDK_180_DIV_PI);
+				}
+
 				FbxAnimCurveKey skey;
 
 				if (interpolation.symbolicValue == Symbol("TBC_KEY")) {
@@ -759,11 +765,178 @@ namespace fbxnif {
 		}
 	}
 
+	void FBXSceneWriter::processKeyframeAnimation(const NIFReference &data, FbxNode *node) {
+		
+		const auto &dataDict = std::get<NIFDictionary>(*data.ptr);
+
+		auto layer = getDefaultTakelayer(getCurrentTake());
+
+		auto numRotationKeys = dataDict.getValue<uint32_t>("Num Rotation Keys");
+		if (numRotationKeys != 0) {
+			const auto &rotationType = dataDict.getValue<NIFEnum>("Rotation Type");
+
+			FbxAnimCurveNode *rotationNode = nullptr;
+
+			if (rotationType.symbolicValue == Symbol("XYZ_ROTATION_KEY")) {
+				auto &rotations = dataDict.getValue<NIFArray>("XYZ Rotations");
+
+				generateCurves(std::get<NIFDictionary>(rotations.data[0]), node->LclRotation, layer, CurveGenerationMode::RotationX, rotationNode);
+				generateCurves(std::get<NIFDictionary>(rotations.data[1]), node->LclRotation, layer, CurveGenerationMode::RotationY, rotationNode);
+				generateCurves(std::get<NIFDictionary>(rotations.data[2]), node->LclRotation, layer, CurveGenerationMode::RotationZ, rotationNode);
+			}
+			else {
+				generateCurves(
+					rotationType,
+					dataDict.getValue<NIFArray>("Quaternion Keys"),
+					node->LclRotation,
+					layer,
+					CurveGenerationMode::RotationQuaternion,
+					rotationNode);
+
+			}
+		}
+
+		const auto &translations = dataDict.getValue<NIFDictionary>("Translations");
+
+		FbxAnimCurveNode *translationNode = nullptr;
+		generateCurves(translations, node->LclTranslation, layer, CurveGenerationMode::Translation, translationNode);
+
+		const auto &scales = dataDict.getValue<NIFDictionary>("Scales");
+
+		FbxAnimCurveNode *scaleNode = nullptr;
+		generateCurves(scales, node->LclScaling, layer, CurveGenerationMode::Scaling, scaleNode);
+	}
+
+	void FBXSceneWriter::applyInterpolatorTransform(const NIFDictionary &interpolator, FbxNode *node) {
+#if 0 // Causes problems with bind pose generation: 'default transform' is different from bind pose transform
+		const auto &quatTransform = getQuatTransform(interpolator.getValue<NIFDictionary>("Transform"));
+
+		printf("setting transform of %s to default, because interpolator has no data\n", node->GetName());
+
+		node->LclTranslation = quatTransform.GetT();
+		node->LclRotation = quatTransform.GetR();
+		node->LclScaling = quatTransform.GetS();
+#endif
+	}
+
+
+	void FBXSceneWriter::processBSplineAnimation(const NIFDictionary &interpolator, FbxNode *node) {
+		BSplineTrackDefinition translationDef;
+		translationDef.handleKey = "Translation Handle";
+		translationDef.offsetKey = "Translation Offset";
+		translationDef.halfRangeKey = "Translation Half Range";
+
+		BSplineTrackDefinition rotationDef;
+		rotationDef.handleKey = "Rotation Handle";
+		rotationDef.offsetKey = "Rotation Offset";
+		rotationDef.halfRangeKey = "Rotation Half Range";
+
+		BSplineTrackDefinition scaleDef;
+		scaleDef.handleKey = "Scale Handle";
+		scaleDef.offsetKey = "Scale Offset";
+		scaleDef.halfRangeKey = "Scale Half Range";
+
+		BSplineDataSet dataSet(interpolator);
+
+		if (dataSet.isTrackPresent(translationDef)) {
+			printf("Translation track present\n");
+
+			auto animNode = node->LclTranslation.CreateCurveNode(getDefaultTakelayer(getCurrentTake()));
+			auto xCurve = FbxAnimCurve::Create(m_scene, "");
+			auto yCurve = FbxAnimCurve::Create(m_scene, "");
+			auto zCurve = FbxAnimCurve::Create(m_scene, "");
+			animNode->ConnectToChannel(xCurve, 0U);
+			animNode->ConnectToChannel(yCurve, 1U);
+			animNode->ConnectToChannel(zCurve, 2U);
+
+			xCurve->KeyModifyBegin();
+			yCurve->KeyModifyBegin();
+			zCurve->KeyModifyBegin();
+
+			auto translation = dataSet.extractTrack<3>(translationDef);
+
+			dataSet.getCurveSamplingPoints([&](float time) {
+				const auto &sample = dataSet.sampleTrack(translation, time);
+
+				FbxTime ftime;
+				ftime.SetSecondDouble(time);
+				
+				xCurve->KeyAdd(ftime, FbxAnimCurveKey(ftime, static_cast<float>(sample[0])));
+				yCurve->KeyAdd(ftime, FbxAnimCurveKey(ftime, static_cast<float>(sample[1])));
+				zCurve->KeyAdd(ftime, FbxAnimCurveKey(ftime, static_cast<float>(sample[2])));
+			});
+
+			zCurve->KeyModifyEnd();
+			yCurve->KeyModifyEnd();
+			xCurve->KeyModifyEnd();
+		}
+
+		if (dataSet.isTrackPresent(rotationDef)) {
+			printf("Rotation track present\n");
+
+			auto animNode = node->LclRotation.CreateCurveNode(getDefaultTakelayer(getCurrentTake()));
+			auto xCurve = FbxAnimCurve::Create(m_scene, "");
+			auto yCurve = FbxAnimCurve::Create(m_scene, "");
+			auto zCurve = FbxAnimCurve::Create(m_scene, "");
+			animNode->ConnectToChannel(xCurve, 0U);
+			animNode->ConnectToChannel(yCurve, 1U);
+			animNode->ConnectToChannel(zCurve, 2U);
+
+			xCurve->KeyModifyBegin();
+			yCurve->KeyModifyBegin();
+			zCurve->KeyModifyBegin();
+
+			auto rotation = dataSet.extractTrack<4>(rotationDef);
+			
+			dataSet.getCurveSamplingPoints([&](float time) {
+				const auto &sample = dataSet.sampleTrack(rotation, time);
+
+				FbxTime ftime;
+				ftime.SetSecondDouble(time);
+
+				FbxQuaternion quat(sample[1], sample[2], sample[3], sample[0]);
+				FbxVector4 rotation;
+				rotation.SetXYZ(quat);
+
+				xCurve->KeyAdd(ftime, FbxAnimCurveKey(ftime, static_cast<float>(rotation[0])));
+				yCurve->KeyAdd(ftime, FbxAnimCurveKey(ftime, static_cast<float>(rotation[1])));
+				zCurve->KeyAdd(ftime, FbxAnimCurveKey(ftime, static_cast<float>(rotation[2])));
+			});
+
+			zCurve->KeyModifyEnd();
+			yCurve->KeyModifyEnd();
+			xCurve->KeyModifyEnd();
+		}
+
+		if (dataSet.isTrackPresent(scaleDef)) {
+			printf("Scaling track present\n");
+
+			auto animNode = node->LclTranslation.CreateCurveNode(getDefaultTakelayer(getCurrentTake()));
+			auto curve = FbxAnimCurve::Create(m_scene, "");
+			animNode->ConnectToChannel(curve, 0U);
+			animNode->ConnectToChannel(curve, 1U);
+			animNode->ConnectToChannel(curve, 2U);
+
+			curve->KeyModifyBegin();
+
+			auto scaling = dataSet.extractTrack<1>(scaleDef);
+
+			dataSet.getCurveSamplingPoints([&](float time) {
+				const auto &sample = dataSet.sampleTrack(scaling, time);
+
+				FbxTime ftime;
+				ftime.SetSecondDouble(time);
+				
+				curve->KeyAdd(ftime, FbxAnimCurveKey(ftime, static_cast<float>(sample[0])));
+			});
+
+			curve->KeyModifyEnd();
+		}
+	}
+
 	void FBXSceneWriter::processController(const NIFDictionary &controller, FbxNode *node) {
 		if (controller.kindOf("NiKeyframeController")) {
 			printf("Keyframe controller on %s\n", node->GetName());
-
-			NIFReference data;
 
 			if (controller.data.count("Interpolator") != 0) {
 				const auto &interpolatorPtr = controller.getValue<NIFReference>("Interpolator");
@@ -775,73 +948,30 @@ namespace fbxnif {
 
 				const auto &interpolator = std::get<NIFDictionary>(*interpolatorPtr.ptr);
 
-				if (!interpolator.kindOf("NiTransformInterpolator")) {
+				if (interpolator.kindOf("NiTransformInterpolator")) {
+					const auto &data = interpolator.getValue<NIFReference>("Data");
+
+					if (!data.ptr) {
+						applyInterpolatorTransform(interpolator, node);
+					}
+					else {
+						processKeyframeAnimation(data, node);
+					}
+				} else if(interpolator.kindOf("NiBSplineInterpolator")) {
+					processBSplineAnimation(interpolator, node);
+				} else {
 					fprintf(stderr, "Unsupported interpolator on NiKeyframeController: %s\n", interpolator.typeChain.front().toString());
 					return;
 				}
-
-				data = interpolator.getValue<NIFReference>("Data");
-
-#if 0 // Causes problems with bind pose generation: 'default transform' is different from bind pose transform
-				if (!data.ptr) {
-					const auto &quatTransform = getQuatTransform(interpolator.getValue<NIFDictionary>("Transform"));
-
-					printf("setting transform of %s to default, because interpolator has no data\n", node->GetName());
-
-					node->LclTranslation = quatTransform.GetT();
-					node->LclRotation = quatTransform.GetR();
-					node->LclScaling = quatTransform.GetS();
-				}
-#endif
 			}
 			else {
-				data = controller.getValue<NIFReference>("Data");
-			}
-
-			if (!data.ptr) {
-				fprintf(stderr, "Keyframe controller on %s has no data\n", node->GetName());
-
-				return;
-			}
-
-			const auto &dataDict = std::get<NIFDictionary>(*data.ptr);
-
-			auto layer = getDefaultTakelayer(getCurrentTake());
-
-			auto numRotationKeys = dataDict.getValue<uint32_t>("Num Rotation Keys");
-			if (numRotationKeys != 0) {
-				const auto &rotationType = dataDict.getValue<NIFEnum>("Rotation Type");
-
-				FbxAnimCurveNode *rotationNode = nullptr;
-
-				if (rotationType.symbolicValue == Symbol("XYZ_ROTATION_KEY")) {
-					auto &rotations = dataDict.getValue<NIFArray>("XYZ Rotations");
-
-					generateCurves(std::get<NIFDictionary>(rotations.data[0]), node->LclRotation, layer, CurveGenerationMode::RotationX, rotationNode);
-					generateCurves(std::get<NIFDictionary>(rotations.data[1]), node->LclRotation, layer, CurveGenerationMode::RotationY, rotationNode);
-					generateCurves(std::get<NIFDictionary>(rotations.data[2]), node->LclRotation, layer, CurveGenerationMode::RotationZ, rotationNode);
-				}
-				else {
-					generateCurves(
-						rotationType,
-						dataDict.getValue<NIFArray>("Quaternion Keys"),
-						node->LclRotation,
-						layer,
-						CurveGenerationMode::RotationQuaternion,
-						rotationNode);
-
+				const auto &data = controller.getValue<NIFReference>("Data");
+				if (data.ptr) {
+					processKeyframeAnimation(data, node);
 				}
 			}
 
-			const auto &translations = dataDict.getValue<NIFDictionary>("Translations");
 
-			FbxAnimCurveNode *translationNode = nullptr;
-			generateCurves(translations, node->LclTranslation, layer, CurveGenerationMode::Translation, translationNode);
-
-			const auto &scales = dataDict.getValue<NIFDictionary>("Scales");
-
-			FbxAnimCurveNode *scaleNode = nullptr;
-			generateCurves(scales, node->LclScaling, layer, CurveGenerationMode::Scaling, scaleNode);
 		} else if(controller.kindOf("NiControllerManager")) {
 			printf("NiControllerManager found, deferring\n");
 
@@ -918,8 +1048,6 @@ namespace fbxnif {
 				targetNode = getString(blockDict.getValue<NIFDictionary>("Node Name"), m_file.header());				
 			}
 
-			printf("Controller block for %s\n", targetNode.c_str());
-
 			auto it = m_importedBoneMap.find(targetNode);
 			if (it == m_importedBoneMap.end()) {
 				fprintf(stderr, "Node %s, required by NiSequence, is not present in skeleton\n", targetNode.c_str());
@@ -949,14 +1077,6 @@ namespace fbxnif {
 				for (Symbol controllerType(controllerTypeName.c_str()); !controllerType.isNull(); controllerType = controllerType.parentType()) {
 					controller.typeChain.push_back(controllerType);
 				}
-
-				printf("No existing controller, creating new. Type chain: ");
-
-				for (const auto type : controller.typeChain) {
-					printf("'%s' ", type.toString());
-				}
-
-				printf("\n");
 
 				controller.data.emplace("Interpolator", blockDict.getValue<NIFReference>("Interpolator"));
 

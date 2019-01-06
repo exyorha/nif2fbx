@@ -1,4 +1,7 @@
 add_library(fbxsdknif SHARED
+	BSplineTrackDefinition.h
+	BSplineDataSet.cpp
+	BSplineDataSet.h
 	FBXNIFPlugin.cpp
 	FBXNIFPlugin.h
 	FBXNIFPluginNS.h
