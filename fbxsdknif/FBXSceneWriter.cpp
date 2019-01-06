@@ -228,6 +228,8 @@ namespace fbxnif {
 		node->LclScaling = FbxDouble3(dict.getValue<float>("Scale"));
 
 		if (m_skeleton.allBones().count(var.ptr) != 0) {
+			m_importedBoneMap.emplace(node->GetName(), node);
+
 			auto skeleton = FbxSkeleton::Create(m_scene, (std::string(node->GetName()) + " Skeleton").c_str());
 			node->AddNodeAttribute(skeleton);
 
@@ -348,6 +350,9 @@ namespace fbxnif {
 		if (data.isA("NiTriShapeData")) {
 			importMeshTriangles(mesh, data);
 		}
+		else if (data.isA("NiTriStripsData")) {
+			importMeshTriangleStrips(mesh, data);
+		}
 		else {
 			fprintf(stderr, "%s: unknown type of geometry data: %s\n",
 				mesh->GetName(), data.typeChain.front().toString());
@@ -432,6 +437,46 @@ namespace fbxnif {
 				mesh->EndPolygon();
 			}
 		}
+	}
+
+	void FBXSceneWriter::importMeshTriangleStrips(FbxMesh *mesh, const NIFDictionary &container) {
+		auto numTriangles = container.getValue<uint32_t>("Num Triangles");
+
+		mesh->ReservePolygonCount(static_cast<int>(numTriangles));
+		mesh->ReservePolygonVertexCount(static_cast<int>(numTriangles * 3));
+
+		if (container.data.count("Strip Lengths") != 0 && container.data.count("Points") != 0) {
+			const auto &stripLengths = container.getValue<NIFArray>("Strip Lengths");
+			const auto &points = container.getValue<NIFArray>("Points");
+
+			size_t stripIndex = 0;
+
+			for (const auto &stripLengthVal : stripLengths.data) {
+				auto stripLength = std::get<uint32_t>(stripLengthVal);
+				const auto &stripPoints = std::get<NIFArray>(points.data[stripIndex]);
+
+				for (size_t stripPoint = 2; stripPoint < stripLength; stripPoint++) {
+
+					mesh->BeginPolygon(-1, -1, -1, false);
+					
+					if (stripPoint % 2) {
+						mesh->AddPolygon(std::get<uint32_t>(stripPoints.data[stripPoint]));
+						mesh->AddPolygon(std::get<uint32_t>(stripPoints.data[stripPoint - 1]));
+						mesh->AddPolygon(std::get<uint32_t>(stripPoints.data[stripPoint - 2]));
+					}
+					else {
+						mesh->AddPolygon(std::get<uint32_t>(stripPoints.data[stripPoint - 2]));
+						mesh->AddPolygon(std::get<uint32_t>(stripPoints.data[stripPoint - 1]));
+						mesh->AddPolygon(std::get<uint32_t>(stripPoints.data[stripPoint]));
+					}
+
+					mesh->EndPolygon();
+				}
+
+				stripIndex++;
+			}
+		}
+
 	}
 
 	void FBXSceneWriter::convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node) {

@@ -69,6 +69,7 @@ namespace fbxnif {
 		void importVectorElement(const NIFDictionary &data, FbxMesh *mesh, const Symbol &name, ElementType *(FbxGeometryBase::*createElement)());
 		
 		void importMeshTriangles(FbxMesh *mesh, const NIFDictionary &container);
+		void importMeshTriangleStrips(FbxMesh *mesh, const NIFDictionary &container);
 
 		FbxNode *findSkeletonRoot(FbxNode *parent);
 		void registerImportedBones(FbxNode *bone);

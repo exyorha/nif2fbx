@@ -432,14 +432,15 @@ namespace fbxnif {
 		m_parentNodes.emplace(node.ptr, parentNode);
 
 		for (auto controller = desc.getValue<NIFReference>("Controller").ptr; controller; controller = std::get<NIFDictionary>(*controller).getValue<NIFReference>("Next Controller").ptr) {
-			if (std::get<NIFDictionary>(*controller).kindOf("NiKeyframeController")) {
-				auto &keyfDesc = std::get<NIFDictionary>(*controller);
+			const auto &controllerDict = std::get<NIFDictionary>(*controller);
+			
+			if (controllerDict.kindOf("NiKeyframeController")) {
 				if (std::get<NIFDictionary>(*controller).data.count(Symbol("Data")) != 0) {
-					auto &keyfData = std::get<NIFDictionary>(*keyfDesc.getValue<NIFReference>("Data").ptr);
+					auto &keyfData = std::get<NIFDictionary>(*controllerDict.getValue<NIFReference>("Data").ptr);
 
-					auto rotationKeys = keyfData.getValue<uint32_t>("Num Rotation Keys");
-					auto translationKeys = keyfData.getValue<NIFDictionary>("Translations").getValue<uint32_t>("Num Keys");
-					auto scaleKeys = keyfData.getValue<NIFDictionary>("Scales").getValue<uint32_t>("Num Keys");
+					auto rotationKeys = controllerDict.getValue<uint32_t>("Num Rotation Keys");
+					auto translationKeys = controllerDict.getValue<NIFDictionary>("Translations").getValue<uint32_t>("Num Keys");
+					auto scaleKeys = controllerDict.getValue<NIFDictionary>("Scales").getValue<uint32_t>("Num Keys");
 
 					if (rotationKeys < 2 && translationKeys < 2 && scaleKeys < 2) {
 						fprintf(stderr, "%s: has degenerate keyframe controller, removing\n", nodeName(desc).c_str());
@@ -454,6 +455,18 @@ namespace fbxnif {
 				else {
 					m_allBones.emplace(node.ptr);
 				}
+			}
+			else if (controllerDict.kindOf("NiMultiTargetTransformController")) {
+				m_allBones.emplace(node.ptr);
+
+				for (const auto &target : controllerDict.getValue<NIFArray>("Extra Targets").data) {
+					const auto &targetPtr = std::get<NIFPointer>(target);
+
+					std::shared_ptr<NIFVariant> targetVal(targetPtr.ptr);
+					if(targetVal)
+						m_allBones.emplace(targetVal);
+				}
+
 			}
 		}
 
