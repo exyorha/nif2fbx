@@ -44,11 +44,17 @@ namespace fbxnif {
 		inline void setSkeletonFile(const FbxString &skeletonFile) { m_skeletonFile = skeletonFile; }
 
 	private:
-		void convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode);
+		enum class Pass {
+			Structural,
+			Geometry,
+			Animation
+		};
 
-		void convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node);
-		void convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node);
-		void convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node);
+		void convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode, Pass pass);
+
+		void convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
+		void convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
+		void convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
 
 		enum class CurveGenerationMode {
 			Rotation,
@@ -101,10 +107,8 @@ namespace fbxnif {
 		unsigned int m_meshesGenerated;
 		unsigned int m_skeletonNodesGenerated;
 		FbxString m_skeletonFile;
-		std::vector<const NIFDictionary *> m_controllerManagers;
 		bool m_skeletonImported;
 		std::vector<AnimationTake> m_animationTakes;
-		std::vector<std::pair<const NIFDictionary *, FbxNode *>> m_deferredTriBasedGeoms;
 	};
 }
 

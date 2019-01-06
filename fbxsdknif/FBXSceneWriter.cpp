@@ -50,11 +50,17 @@ namespace fbxnif {
 		const auto &rootDict = std::get<NIFDictionary>(*root.ptr);
 
 		if (rootDict.kindOf("NiAVObject")) {
-			convertSceneNode(root, m_scene->GetRootNode());
+			printf("Starting structural pass\n");
 
-			for (auto &pair : m_deferredTriBasedGeoms) {
-				convertNiTriBasedGeom(*pair.first, pair.second);
-			}
+			convertSceneNode(root, m_scene->GetRootNode(), Pass::Structural);
+
+			printf("Starting geometry pass\n");
+
+			convertSceneNode(root, m_scene->GetRootNode(), Pass::Geometry);
+			
+			printf("Starting animation pass\n");
+
+			convertSceneNode(root, m_scene->GetRootNode(), Pass::Animation);
 		}
 		else if (rootDict.kindOf("NiSequence")) {
 			ensureSkeletonImported(m_scene->GetRootNode());
@@ -62,19 +68,6 @@ namespace fbxnif {
 			processControllerSequence(rootDict, NIFReference());
 
 			m_meshesGenerated++;
-		}
-
-		for (const auto manager : m_controllerManagers) {
-			const auto &palette = manager->getValue<NIFReference>("Object Palette");
-			const auto &sequences = manager->getValue<NIFArray>("Controller Sequences");
-
-			for (const auto &obj : sequences.data) {
-				const auto &ref = std::get<NIFReference>(obj);
-
-				if (ref.ptr) {
-					processControllerSequence(std::get<NIFDictionary>(*ref.ptr), palette);
-				}
-			}
 		}
 
 		if (m_meshesGenerated == 0 && m_skeletonNodesGenerated >= 0 /* && m_animationsGenerated == 0 */) {
@@ -155,7 +148,7 @@ namespace fbxnif {
 		}
 	}
 
-	void FBXSceneWriter::convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
+	void FBXSceneWriter::convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass) {
 		ensureSkeletonImported(node);
 
 		if (dict.typeChain.front() != Symbol("NiNode")) {
@@ -167,7 +160,7 @@ namespace fbxnif {
 			if (!childRef.ptr)
 				continue;
 
-			convertSceneNode(childRef, node);
+			convertSceneNode(childRef, node, pass);
 		}
 	}
 
@@ -197,7 +190,7 @@ namespace fbxnif {
 		return nullptr;
 	}
 
-	void FBXSceneWriter::convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode) {
+	void FBXSceneWriter::convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode, Pass pass) {
 		const auto &dict = std::get<NIFDictionary>(*var.ptr);
 		if (!dict.kindOf("NiAVObject")) {
 			throw std::runtime_error("scene node is not an instance of NiAVObject");
@@ -209,55 +202,69 @@ namespace fbxnif {
 		if (it != m_importedBoneMap.end()) {
 			fprintf(stderr, "FBXSceneWriter: '%s' is replaced by the imported skeleton\n", name.c_str());
 
-			m_nodeMap.emplace(var.ptr, it->second);
+			if (pass == Pass::Structural) {
+				m_nodeMap.emplace(var.ptr, it->second);
+			}
 			return;
 		}
 
-		bool forceHidden = dict.isA("RootCollisionNode");
+		FbxNode *node;
 
-		auto node = FbxNode::Create(m_scene, name.c_str());
-		containingNode->AddChild(node);
+		if (pass == Pass::Structural) {
+			bool forceHidden = dict.isA("RootCollisionNode");
 
-		m_nodeMap.emplace(var.ptr, node);
+			node = FbxNode::Create(m_scene, name.c_str());
+			containingNode->AddChild(node);
+			
+			m_nodeMap.emplace(var.ptr, node);
 
-		fprintf(stderr, "%s: %s\n", node->GetName(), dict.typeChain.front().toString());
+			fprintf(stderr, "%s: %s\n", node->GetName(), dict.typeChain.front().toString());
 
-		node->Visibility = (dict.getValue<uint32_t>("Flags") & NiAVObjectFlagHidden) == 0 && !forceHidden;
-		node->LclTranslation = getVector3(dict.getValue<NIFDictionary>("Translation"));
-		node->LclRotation = getMatrix3x3(dict.getValue<NIFDictionary>("Rotation")).GetR();
-		node->LclScaling = FbxDouble3(dict.getValue<float>("Scale"));
+			node->Visibility = (dict.getValue<uint32_t>("Flags") & NiAVObjectFlagHidden) == 0 && !forceHidden;
+			node->LclTranslation = getVector3(dict.getValue<NIFDictionary>("Translation"));
+			node->LclRotation = getMatrix3x3(dict.getValue<NIFDictionary>("Rotation")).GetR();
+			node->LclScaling = FbxDouble3(dict.getValue<float>("Scale"));
 
-		if (m_skeleton.allBones().count(var.ptr) != 0) {
-			m_importedBoneMap.emplace(node->GetName(), node);
+			if (m_skeleton.allBones().count(var.ptr) != 0) {
+				auto skeleton = FbxSkeleton::Create(m_scene, (std::string(node->GetName()) + " Skeleton").c_str());
+				node->AddNodeAttribute(skeleton);
 
-			auto skeleton = FbxSkeleton::Create(m_scene, (std::string(node->GetName()) + " Skeleton").c_str());
-			node->AddNodeAttribute(skeleton);
+				if (m_skeleton.commonBoneRoot() == var.ptr) {
+					skeleton->SetSkeletonType(FbxSkeleton::eRoot);
+				}
+				else {
+					skeleton->SetSkeletonType(FbxSkeleton::eLimbNode);
+				}
 
-			if (m_skeleton.commonBoneRoot() == var.ptr) {
-				skeleton->SetSkeletonType(FbxSkeleton::eRoot);
+				m_skeletonNodesGenerated++;
 			}
-			else {
-				skeleton->SetSkeletonType(FbxSkeleton::eLimbNode);
-			}
-
-			m_skeletonNodesGenerated++;
 		}
+		else {
 
-		for (auto controller = dict.getValue<NIFReference>("Controller"); controller.ptr; controller = std::get<NIFDictionary>(*controller.ptr).getValue<NIFReference>("Next Controller")) {
-			processController(std::get<NIFDictionary>(*controller.ptr), node);
+			auto it = m_nodeMap.find(var.ptr);
+			if (it == m_nodeMap.end())
+				throw std::logic_error("node not found");
+
+			node = it->second;
 		}
 
 		if (dict.kindOf("NiNode")) {
-			convertNiNode(dict, node);
+			convertNiNode(dict, node, pass);
 		}
 		else if (dict.kindOf("NiTriBasedGeom")) {
-			m_deferredTriBasedGeoms.emplace_back(std::make_pair(&dict, node));
+			convertNiTriBasedGeom(dict, node, pass);
 		}
 		else if (dict.isA("BSTriShape")) {
-			convertBSTriShape(dict, node);
+			convertBSTriShape(dict, node, pass);
 		}
 		else {
 			fprintf(stderr, "FBXSceneWriter: %s: unsupported type: %s\n", node->GetName(), dict.typeChain.front().toString());
+		}
+
+		if (pass == Pass::Animation) {
+			for (auto controller = dict.getValue<NIFReference>("Controller"); controller.ptr; controller = std::get<NIFDictionary>(*controller.ptr).getValue<NIFReference>("Next Controller")) {
+				processController(std::get<NIFDictionary>(*controller.ptr), node);
+			}
 		}
 	}
 	
@@ -279,7 +286,19 @@ namespace fbxnif {
 		}
 	}
 
-	void FBXSceneWriter::convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
+	void FBXSceneWriter::convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass) {
+		if (pass != Pass::Geometry)
+			return;
+
+		if (m_file.header().getValue<uint32_t>("Version") == 0x04000002) {
+			// Morrowind
+
+			if (dict.getValue<uint32_t>("Flags") & 0x40) {
+				printf("%s is Morrowind shadow node, not generating geometry\n", node->GetName());
+				return;
+			}
+		}
+
 		Symbol symVertices("Vertices");
 		Symbol symVertexColors("Vertex Colors");
 
@@ -343,10 +362,6 @@ namespace fbxnif {
 		/*
 		 * Type-specific data
 		 */
-
-
-
-
 		if (data.isA("NiTriShapeData")) {
 			importMeshTriangles(mesh, data);
 		}
@@ -479,7 +494,10 @@ namespace fbxnif {
 
 	}
 
-	void FBXSceneWriter::convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node) {
+	void FBXSceneWriter::convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass) {
+		if (pass != Pass::Geometry)
+			return;
+
 		auto mesh = FbxMesh::Create(m_scene, (std::string(node->GetName()) + " Mesh").c_str());
 		node->AddNodeAttribute(mesh);
 
@@ -1020,8 +1038,80 @@ namespace fbxnif {
 		} else if(controller.kindOf("NiControllerManager")) {
 			printf("NiControllerManager found, deferring\n");
 
-			m_controllerManagers.emplace_back(&controller);
+			const auto &palette = controller.getValue<NIFReference>("Object Palette");
+			const auto &sequences = controller.getValue<NIFArray>("Controller Sequences");
+
+			for (const auto &obj : sequences.data) {
+				const auto &ref = std::get<NIFReference>(obj);
+
+				if (ref.ptr) {
+					processControllerSequence(std::get<NIFDictionary>(*ref.ptr), palette);
+				}
+			}
 		}
+		else if (controller.kindOf("NiGeomMorpherController")) {
+			printf("Morpher controller on %s\n", node->GetName());
+
+			auto mesh = node->GetMesh();
+			if (!mesh) {
+				fprintf(stderr, "node %s has GeomMorpherController, but no mesh could be retrived\n", node->GetName());
+				return;
+			}
+
+			const auto &dataRef = controller.getValue<NIFReference>("Data");
+			const auto &dataDict = std::get<NIFDictionary>(*dataRef.ptr);
+
+			auto blendShape = static_cast<FbxBlendShape *>(mesh->GetDeformer(0, FbxDeformer::eBlendShape));
+			if (blendShape) {
+				printf("blend shape already exists\n");
+			}
+			else {
+				blendShape = FbxBlendShape::Create(m_scene, "");				
+				mesh->AddDeformer(blendShape);
+
+				auto relative = dataDict.getValue<uint32_t>("Relative Targets");
+				auto vertexCount = dataDict.getValue<uint32_t>("Num Vertices");
+				if (vertexCount != mesh->GetControlPointsCount()) {
+					throw std::logic_error("vertex count mismatch between morph and its base shape");
+				}
+
+				auto baseControlPoints = mesh->GetControlPoints();
+
+				for (const auto &morphValue : dataDict.getValue<NIFArray>("Morphs").data) {
+					const auto &morph = std::get<NIFDictionary>(morphValue);
+
+					std::string name;
+
+					if (morph.data.count("Frame Name")) {
+						name = getString(morph.getValue<NIFDictionary>("Frame Name"), m_file.header());
+					}
+
+					const auto &vectors = morph.getValue<NIFArray>("Vectors");
+
+					auto channel = FbxBlendShapeChannel::Create(m_scene, name.c_str());
+					blendShape->AddBlendShapeChannel(channel);
+
+					auto shape = FbxShape::Create(m_scene, "");
+					channel->AddTargetShape(shape);
+
+					shape->InitControlPoints(vertexCount);
+					auto shapeControlPoints = shape->GetControlPoints();
+
+					for (uint32_t vertex = 0; vertex < vertexCount; vertex++) {
+						auto vector = getVector3(std::get<NIFDictionary>(vectors.data[vertex]));
+
+						if (relative) {
+							shapeControlPoints[vertex] = baseControlPoints[vertex] + vector;
+						}
+						else {
+							shapeControlPoints[vertex] = vector;
+						}
+					}
+
+				}
+			}
+
+		} 
 		else {
 			fprintf(stderr, "unsupported controller of type %s on node %s\n", controller.typeChain.front().toString(), node->GetName());
 		}
@@ -1031,6 +1121,7 @@ namespace fbxnif {
 		if (m_animationTakes.empty()) {
 			AnimationTake take;
 			take.stack = FbxAnimStack::Create(m_scene, "default");
+			take.defaultLayer = nullptr;
 
 			m_animationTakes.emplace_back(std::move(take));
 		}
@@ -1093,13 +1184,11 @@ namespace fbxnif {
 				targetNode = getString(blockDict.getValue<NIFDictionary>("Node Name"), m_file.header());				
 			}
 
-			auto it = m_importedBoneMap.find(targetNode);
-			if (it == m_importedBoneMap.end()) {
-				fprintf(stderr, "Node %s, required by NiSequence, is not present in skeleton\n", targetNode.c_str());
+			auto node = m_scene->FindNodeByName(targetNode.c_str());
+			if (!node) {
+				fprintf(stderr, "Node %s, required by NiSequence, is not present\n", targetNode.c_str());
 				continue;
 			}
-
-			auto node = it->second;
 
 			auto controller = blockDict.getValue<NIFReference>("Controller");
 			if (controller.ptr) {

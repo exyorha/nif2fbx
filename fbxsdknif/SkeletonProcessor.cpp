@@ -124,6 +124,10 @@ namespace fbxnif {
 					}
 				}
 
+				auto result = m_allBones.emplace(root);
+				if (result.second)
+					needRecalculation = true;
+
 				m_commonBoneRoot = root;
 
 				if (needRecalculation) {
@@ -232,7 +236,8 @@ namespace fbxnif {
 		}
 
 		if (m_commonBoneRoot) {
-			printf("Skeleton root: %s\nAll bones, unordered:\n", nodeName(std::get<NIFDictionary>(*m_commonBoneRoot)).c_str());
+			printf("Skeleton root: %s\nNIF Root: %s\nAll bones, unordered:\n", nodeName(std::get<NIFDictionary>(*m_commonBoneRoot)).c_str(),
+				nodeName(std::get<NIFDictionary>(*nifRoot.ptr)).c_str());
 			for (const auto &bone : m_allBones) {
 				printf(" - %s\n", nodeName(std::get<NIFDictionary>(*bone)).c_str());
 			}
@@ -438,9 +443,9 @@ namespace fbxnif {
 				if (std::get<NIFDictionary>(*controller).data.count(Symbol("Data")) != 0) {
 					auto &keyfData = std::get<NIFDictionary>(*controllerDict.getValue<NIFReference>("Data").ptr);
 
-					auto rotationKeys = controllerDict.getValue<uint32_t>("Num Rotation Keys");
-					auto translationKeys = controllerDict.getValue<NIFDictionary>("Translations").getValue<uint32_t>("Num Keys");
-					auto scaleKeys = controllerDict.getValue<NIFDictionary>("Scales").getValue<uint32_t>("Num Keys");
+					auto rotationKeys = keyfData.getValue<uint32_t>("Num Rotation Keys");
+					auto translationKeys = keyfData.getValue<NIFDictionary>("Translations").getValue<uint32_t>("Num Keys");
+					auto scaleKeys = keyfData.getValue<NIFDictionary>("Scales").getValue<uint32_t>("Num Keys");
 
 					if (rotationKeys < 2 && translationKeys < 2 && scaleKeys < 2) {
 						fprintf(stderr, "%s: has degenerate keyframe controller, removing\n", nodeName(desc).c_str());

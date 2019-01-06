@@ -123,10 +123,18 @@ int main(int argc, char *argv[]) {
 	}))
 		return 1;
 		*/
-
-	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\oblivion\\meshes\\architecture\\ships\\mainmast02.nif", "C:\\projects\\nifparse\\meshes\\mainmast02.fbx", [](fbxsdk::FbxIOSettings *ios) {
+	/*
+	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\oblivion\\meshes\\creatures\\ghost\\heademissive.nif", "C:\\projects\\nifparse\\meshes\\heademissive.fbx", [](fbxsdk::FbxIOSettings *ios) {
 		//ios->SetStringProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Skeleton", "C:\\projects\\nifparse\\meshes\\xivilai\\skeleton.fbx");
 	}))
+		return 1;
+		*/
+
+	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\bonelord.nif", "C:\\projects\\nifparse\\meshes\\bonelord.fbx", [](fbxsdk::FbxIOSettings *ios) {
+		//ios->SetStringProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Skeleton", "C:\\projects\\nifparse\\meshes\\xivilai\\skeleton.fbx");
+	}))
+		return 1;
+
 
 	manager->Destroy();
 
