@@ -59,6 +59,14 @@ namespace fbxnif {
 		return mat;
 	}
 
+	FbxDouble3 getColor3(const NIFDictionary &dict) {
+		return FbxDouble3(
+			dict.getValue<float>("r"),
+			dict.getValue<float>("g"),
+			dict.getValue<float>("b")
+		);
+	}
+
 	FbxColor getColor4(const NIFDictionary &dict) {
 		return FbxColor(
 			dict.getValue<float>("r"),

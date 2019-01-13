@@ -15,6 +15,7 @@ namespace fbxnif {
 	std::string getStringFromPalette(uint32_t offset, const NIFDictionary &palette);
 	FbxVector4 getVector3(const NIFDictionary &dict);
 	FbxAMatrix getMatrix3x3(const NIFDictionary &dict);
+	FbxDouble3 getColor3(const NIFDictionary &dict);
 	FbxColor getColor4(const NIFDictionary &dict);
 	FbxColor getByteColor4(const NIFDictionary &dict);
 	FbxVector2 getTexCoord(const NIFDictionary &dict);

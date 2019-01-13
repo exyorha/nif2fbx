@@ -89,11 +89,11 @@ int main(int argc, char *argv[]) {
 		return 1;
 	*/
 
-	/*
+	
 	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\azura.nif", "C:\\projects\\nifparse\\meshes\\azura.fbx", [](fbxsdk::FbxIOSettings *ios) {
 		//ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
 	}))
-		return 1;*/
+		return 1;
 	/*
 	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\dwebrentrance01.nif", "C:\\projects\\nifparse\\meshes\\dwebrentrance01.fbx", [](fbxsdk::FbxIOSettings *ios) {
 		//ios->SetBoolProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|SkeletonImport", true);
@@ -129,12 +129,12 @@ int main(int argc, char *argv[]) {
 	}))
 		return 1;
 		*/
-
-	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\bonelord.nif", "C:\\projects\\nifparse\\meshes\\bonelord.fbx", [](fbxsdk::FbxIOSettings *ios) {
+	/*
+	if (!convert(manager, "C:\\projects\\nifparse\\meshes\\farmhouse01.nif", "C:\\projects\\nifparse\\meshes\\farmhouse01.fbx", [](fbxsdk::FbxIOSettings *ios) {
 		//ios->SetStringProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Skeleton", "C:\\projects\\nifparse\\meshes\\xivilai\\skeleton.fbx");
 	}))
 		return 1;
-
+	*/
 
 	manager->Destroy();
 

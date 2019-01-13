@@ -7,6 +7,8 @@ add_library(fbxsdknif SHARED
 	FBXNIFPluginNS.h
 	FBXSceneWriter.cpp
 	FBXSceneWriter.h
+	JsonUtils.cpp
+	JsonUtils.h
 	main.cpp
 	NIFReader.cpp
 	NIFReader.h
@@ -15,4 +17,5 @@ add_library(fbxsdknif SHARED
 	SkeletonProcessor.cpp
 	SkeletonProcessor.h
 )
-target_link_libraries(fbxsdknif PRIVATE fbxsdk nifparse)
+target_link_libraries(fbxsdknif PRIVATE fbxsdk nifparse jsoncpp)
+

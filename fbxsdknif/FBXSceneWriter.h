@@ -50,12 +50,6 @@ namespace fbxnif {
 			Animation
 		};
 
-		void convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode, Pass pass);
-
-		void convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
-		void convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
-		void convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
-
 		enum class CurveGenerationMode {
 			Rotation,
 			Translation,
@@ -70,6 +64,12 @@ namespace fbxnif {
 			FbxAnimStack *stack;
 			FbxAnimLayer *defaultLayer;
 		};
+
+		void convertSceneNode(const NIFReference &var, fbxsdk::FbxNode *containingNode, Pass pass);
+
+		void convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
+		void convertNiTriBasedGeom(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
+		void convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass);
 
 		template<typename ElementType>
 		void importVectorElement(const NIFDictionary &data, FbxMesh *mesh, const Symbol &name, ElementType *(FbxGeometryBase::*createElement)());
@@ -92,6 +92,13 @@ namespace fbxnif {
 		
 		void ensureSkeletonImported(FbxNode *node);
 		
+		void processProperty(const NIFDictionary &prop, FbxNode *node, Pass pass);
+
+		template<typename Functor>
+		void manipulateExtendedMaterialData(FbxSurfaceMaterial *material, Functor &&functor);
+
+		FbxSurfaceMaterial *establishMaterial(FbxNode *node);
+
 		AnimationTake &getCurrentTake();
 		FbxAnimLayer *getDefaultTakelayer(AnimationTake &take);
 		

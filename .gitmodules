@@ -1,3 +1,6 @@
 [submodule "nifparse"]
 	path = nifparse
 	url = https://unwind-project.org/ope/nifparse.git
+[submodule "jsoncpp/jsoncpp"]
+	path = jsoncpp/jsoncpp
+	url = https://github.com/open-source-parsers/jsoncpp.git

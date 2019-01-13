@@ -11,17 +11,21 @@
 #include <fbxsdk/scene/animation/fbxanimcurve.h>
 #include <fbxsdk/scene/animation/fbxanimcurvenode.h>
 #include <fbxsdk/scene/animation/fbxanimcurvefilters.h>
+#include <fbxsdk/scene/shading/fbxsurfacephong.h>
 
 #include <nifparse/NIFFile.h>
 #include <nifparse/PrettyPrinter.h>
 
 #include <array>
 
+#include <json.h>
+
 #include "FBXSceneWriter.h"
 #include "NIFUtils.h"
 #include "SkeletonProcessor.h"
 #include "BSplineTrackDefinition.h"
 #include "BSplineDataSet.h"
+#include "JsonUtils.h"
 
 namespace fbxnif {
 	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton) {
@@ -266,6 +270,15 @@ namespace fbxnif {
 				processController(std::get<NIFDictionary>(*controller.ptr), node);
 			}
 		}
+
+		if (dict.data.count("Properties") != 0) {
+			for (const auto &prop : dict.getValue<NIFArray>("Properties").data) {
+				const auto &ptr = std::get<NIFReference>(prop).ptr;
+				if (ptr) {
+					processProperty(std::get<NIFDictionary>(*ptr), node, pass);
+				}
+			}
+		}
 	}
 	
 	template<typename ElementType>
@@ -495,120 +508,127 @@ namespace fbxnif {
 	}
 
 	void FBXSceneWriter::convertBSTriShape(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass) {
-		if (pass != Pass::Geometry)
-			return;
+		if (pass == Pass::Geometry) {
 
-		auto mesh = FbxMesh::Create(m_scene, (std::string(node->GetName()) + " Mesh").c_str());
-		node->AddNodeAttribute(mesh);
+			auto mesh = FbxMesh::Create(m_scene, (std::string(node->GetName()) + " Mesh").c_str());
+			node->AddNodeAttribute(mesh);
 
-		m_meshesGenerated++;
+			m_meshesGenerated++;
 
-		auto numVertices = dict.getValue<uint32_t>("Num Vertices");
+			auto numVertices = dict.getValue<uint32_t>("Num Vertices");
 
-		mesh->InitControlPoints(static_cast<int>(numVertices));
+			mesh->InitControlPoints(static_cast<int>(numVertices));
 
-		const auto &vertexAttributes = dict.getValue<NIFDictionary>("Vertex Desc").getValue<NIFBitflags>("Vertex Attributes");
+			const auto &vertexAttributes = dict.getValue<NIFDictionary>("Vertex Desc").getValue<NIFBitflags>("Vertex Attributes");
 
-		nifparse::PrettyPrinter prettyPrinter(std::cerr);
-		prettyPrinter.print(vertexAttributes);
+			nifparse::PrettyPrinter prettyPrinter(std::cerr);
+			prettyPrinter.print(vertexAttributes);
 
-		Symbol symVertexData("Vertex Data");
-		Symbol symTriangles("Triangles");
+			Symbol symVertexData("Vertex Data");
+			Symbol symTriangles("Triangles");
 
-		if (dict.data.count(symVertexData) != 0) {
-			const auto &vertexData = dict.getValue<NIFArray>(symVertexData);
+			if (dict.data.count(symVertexData) != 0) {
+				const auto &vertexData = dict.getValue<NIFArray>(symVertexData);
 
-			Symbol symVertex("Vertex");
-			Symbol symUVs("UVs");
-			Symbol symUV("UV");
-			Symbol symNormals("Normals");
-			Symbol symNormal("Normal");
-			Symbol symTangents("Tangents");
-			Symbol symTangent("Tangent");
-			Symbol symBitangentX("Bitangent X");
-			Symbol symBitangentY("Bitangent Y");
-			Symbol symBitangentZ("Bitangent Z");
-			Symbol symVertex_Colors("Vertex_Colors");
-			Symbol symVertexColors("Vertex Colors");
+				Symbol symVertex("Vertex");
+				Symbol symUVs("UVs");
+				Symbol symUV("UV");
+				Symbol symNormals("Normals");
+				Symbol symNormal("Normal");
+				Symbol symTangents("Tangents");
+				Symbol symTangent("Tangent");
+				Symbol symBitangentX("Bitangent X");
+				Symbol symBitangentY("Bitangent Y");
+				Symbol symBitangentZ("Bitangent Z");
+				Symbol symVertex_Colors("Vertex_Colors");
+				Symbol symVertexColors("Vertex Colors");
 
-			for (const auto &attribute : vertexAttributes.symbolicValues) {
-				if (attribute == symVertex) {
-					auto controlPoints = mesh->GetControlPoints();
+				for (const auto &attribute : vertexAttributes.symbolicValues) {
+					if (attribute == symVertex) {
+						auto controlPoints = mesh->GetControlPoints();
 
-					for (size_t index = 0, size = numVertices; index < size; index++) {
-						controlPoints[index] = getVector3(std::get<NIFDictionary>(vertexData.data[index]).getValue<NIFDictionary>(symVertex));
+						for (size_t index = 0, size = numVertices; index < size; index++) {
+							controlPoints[index] = getVector3(std::get<NIFDictionary>(vertexData.data[index]).getValue<NIFDictionary>(symVertex));
+						}
 					}
-				}
-				else if (attribute == symUVs) {
-					auto uv = mesh->CreateElementUV("UV0", FbxLayerElement::eTextureDiffuse);
-					uv->SetMappingMode(FbxGeometryElement::eByControlPoint);
-					uv->SetReferenceMode(FbxGeometryElement::eDirect);
+					else if (attribute == symUVs) {
+						auto uv = mesh->CreateElementUV("UV0", FbxLayerElement::eTextureDiffuse);
+						uv->SetMappingMode(FbxGeometryElement::eByControlPoint);
+						uv->SetReferenceMode(FbxGeometryElement::eDirect);
 
-					auto &uvData = uv->GetDirectArray();
-					uvData.Resize(static_cast<int>(numVertices));
-					for (size_t index = 0; index < numVertices; index++) {
-						uvData.SetAt(static_cast<int>(index), getTexCoord(std::get<NIFDictionary>(vertexData.data[index]).getValue<NIFDictionary>(symUV)));
+						auto &uvData = uv->GetDirectArray();
+						uvData.Resize(static_cast<int>(numVertices));
+						for (size_t index = 0; index < numVertices; index++) {
+							uvData.SetAt(static_cast<int>(index), getTexCoord(std::get<NIFDictionary>(vertexData.data[index]).getValue<NIFDictionary>(symUV)));
+						}
 					}
-				}
-				else if (attribute == symNormals) {
-					auto normals = mesh->CreateElementNormal();
-					normals->SetMappingMode(FbxGeometryElement::eByControlPoint);
-					normals->SetReferenceMode(FbxGeometryElement::eDirect);
+					else if (attribute == symNormals) {
+						auto normals = mesh->CreateElementNormal();
+						normals->SetMappingMode(FbxGeometryElement::eByControlPoint);
+						normals->SetReferenceMode(FbxGeometryElement::eDirect);
 
-					auto &vectorData = normals->GetDirectArray();
-					vectorData.Resize(static_cast<int>(numVertices));
+						auto &vectorData = normals->GetDirectArray();
+						vectorData.Resize(static_cast<int>(numVertices));
 
-					for (size_t index = 0; index < numVertices; index++) {
-						vectorData.SetAt(static_cast<int>(index), getByteVector3(std::get<NIFDictionary>(vertexData.data[index]).getValue<NIFDictionary>(symNormal)));
+						for (size_t index = 0; index < numVertices; index++) {
+							vectorData.SetAt(static_cast<int>(index), getByteVector3(std::get<NIFDictionary>(vertexData.data[index]).getValue<NIFDictionary>(symNormal)));
+						}
 					}
-				}
-				else if (attribute == symTangents) {
-					auto tangents = mesh->CreateElementTangent();
-					tangents->SetMappingMode(FbxGeometryElement::eByControlPoint);
-					tangents->SetReferenceMode(FbxGeometryElement::eDirect);
+					else if (attribute == symTangents) {
+						auto tangents = mesh->CreateElementTangent();
+						tangents->SetMappingMode(FbxGeometryElement::eByControlPoint);
+						tangents->SetReferenceMode(FbxGeometryElement::eDirect);
 
-					auto binormals = mesh->CreateElementBinormal();
-					binormals->SetMappingMode(FbxGeometryElement::eByControlPoint);
-					binormals->SetReferenceMode(FbxGeometryElement::eDirect);
+						auto binormals = mesh->CreateElementBinormal();
+						binormals->SetMappingMode(FbxGeometryElement::eByControlPoint);
+						binormals->SetReferenceMode(FbxGeometryElement::eDirect);
 
-					auto &tangentData = tangents->GetDirectArray();
-					tangentData.Resize(static_cast<int>(numVertices));
+						auto &tangentData = tangents->GetDirectArray();
+						tangentData.Resize(static_cast<int>(numVertices));
 
-					auto &binormalData = binormals->GetDirectArray();
-					binormalData.Resize(static_cast<int>(numVertices));
+						auto &binormalData = binormals->GetDirectArray();
+						binormalData.Resize(static_cast<int>(numVertices));
 
-					for (size_t index = 0; index < numVertices; index++) {
-						const auto &vertex = std::get<NIFDictionary>(vertexData.data[index]);
+						for (size_t index = 0; index < numVertices; index++) {
+							const auto &vertex = std::get<NIFDictionary>(vertexData.data[index]);
 
-						tangentData.SetAt(static_cast<int>(index), getByteVector3(vertex.getValue<NIFDictionary>(symTangent)));
-						binormalData.SetAt(static_cast<int>(index), FbxVector4(
-							vertex.getValue<float>(symBitangentX),
-							getSignedFloatFromU8(vertex.getValue<uint32_t>(symBitangentY)),
-							getSignedFloatFromU8(vertex.getValue<uint32_t>(symBitangentZ))
-						));
+							tangentData.SetAt(static_cast<int>(index), getByteVector3(vertex.getValue<NIFDictionary>(symTangent)));
+							binormalData.SetAt(static_cast<int>(index), FbxVector4(
+								vertex.getValue<float>(symBitangentX),
+								getSignedFloatFromU8(vertex.getValue<uint32_t>(symBitangentY)),
+								getSignedFloatFromU8(vertex.getValue<uint32_t>(symBitangentZ))
+							));
+						}
 					}
-				}
-				else if (attribute == symVertex_Colors) {
-					auto colors = mesh->CreateElementVertexColor();
-					colors->SetMappingMode(FbxGeometryElement::eByControlPoint);
-					colors->SetReferenceMode(FbxGeometryElement::eDirect);
+					else if (attribute == symVertex_Colors) {
+						auto colors = mesh->CreateElementVertexColor();
+						colors->SetMappingMode(FbxGeometryElement::eByControlPoint);
+						colors->SetReferenceMode(FbxGeometryElement::eDirect);
 
-					auto &colorData = colors->GetDirectArray();
-					colorData.Resize(static_cast<int>(numVertices));
-					for (size_t index = 0; index < numVertices; index++) {
-						const auto &vertex = std::get<NIFDictionary>(vertexData.data[index]);
+						auto &colorData = colors->GetDirectArray();
+						colorData.Resize(static_cast<int>(numVertices));
+						for (size_t index = 0; index < numVertices; index++) {
+							const auto &vertex = std::get<NIFDictionary>(vertexData.data[index]);
 
-						colorData.SetAt(static_cast<int>(index), getByteColor4(vertex.getValue<NIFDictionary>(symVertexColors)));
+							colorData.SetAt(static_cast<int>(index), getByteColor4(vertex.getValue<NIFDictionary>(symVertexColors)));
+						}
+
 					}
-
-				}
-				else {
-					fprintf(stderr, "Unsupported vertex attribute: %s\n", attribute.toString());
+					else {
+						fprintf(stderr, "Unsupported vertex attribute: %s\n", attribute.toString());
+					}
 				}
 			}
+
+			importMeshTriangles(mesh, dict);
 		}
 
-		importMeshTriangles(mesh, dict);
+		for (Symbol prop : { "Shader Property", "Alpha Property" }) {
+			auto propRef = dict.getValue<NIFReference>(prop).ptr;
+			if (propRef) {
+				processProperty(std::get<NIFDictionary>(*propRef), node, pass);
+			}
+		}
 	}
 
 
@@ -1223,5 +1243,99 @@ namespace fbxnif {
 
 	}
 
+	FbxSurfaceMaterial *FBXSceneWriter::establishMaterial(FbxNode *node) {
+		if (node->GetMaterialCount() == 0) {
+			auto material = fbxsdk::FbxSurfacePhong::Create(m_scene, FbxString(node->GetName()) + " Material");
+			node->AddMaterial(material);
 
+			auto mesh = node->GetMesh();
+			if (mesh) {
+				auto materialElement = mesh->CreateElementMaterial();
+				materialElement->SetMappingMode(fbxsdk::FbxLayerElement::eAllSame);
+				materialElement->GetIndexArray().Add(0);
+			}
+		}
+
+		return node->GetMaterial(0);
+	}
+
+	template<typename Functor>
+	void FBXSceneWriter::manipulateExtendedMaterialData(FbxSurfaceMaterial *material, Functor &&functor) {
+
+		Json::Value extendedData(Json::objectValue);
+
+		auto extendedDataProp = material->FindProperty("ExtendedMaterialData");
+		if (extendedDataProp.IsValid()) {
+			Json::CharReaderBuilder readerBuilder;
+			std::unique_ptr<Json::CharReader> reader(readerBuilder.newCharReader());
+
+			auto val = extendedDataProp.Get<FbxString>();
+
+			if (!reader->parse(val, static_cast<const char *>(val) + val.Size(), &extendedData, nullptr))
+				throw std::logic_error("failed to parse ExtendedMaterialData");
+		}
+		else {
+			extendedDataProp = FbxProperty::Create(material, FbxStringDT, "ExtendedMaterialData");
+		}
+
+		functor(extendedData);
+
+		Json::StreamWriterBuilder writerBuilder;
+		writerBuilder["indentation"] = "";
+		std::unique_ptr<Json::StreamWriter> writer(writerBuilder.newStreamWriter());
+		std::stringstream writeStream;
+		writer->write(extendedData, &writeStream);
+		extendedDataProp.Set<FbxString>(writeStream.str().c_str());
+	}
+
+	void FBXSceneWriter::processProperty(const NIFDictionary &prop, FbxNode *node, Pass pass) {
+		printf("Property %s on %s\n", prop.typeChain.front().toString(), node->GetName());
+
+		if (prop.kindOf("NiMaterialProperty")) {
+			if (pass == Pass::Geometry) {
+				auto material = static_cast<fbxsdk::FbxSurfacePhong *>(establishMaterial(node));
+
+				manipulateExtendedMaterialData(material, [&](Json::Value &extendedData) {
+					extendedData["Model"] = "PreShader";
+
+					if (prop.data.count("Ambient Color") != 0) {
+						extendedData["AmbientColor"] = toJsonValue(getColor3(prop.getValue<NIFDictionary>("Ambient Color")));
+					}
+
+					if (prop.data.count("Diffuse Color") != 0) {
+						auto diffuseColor = getColor3(prop.getValue<NIFDictionary>("Diffuse Color"));
+
+						extendedData["DiffuseColor"] = toJsonValue(diffuseColor);
+						material->Diffuse.Set(diffuseColor);
+					}
+					
+					auto specularColor = getColor3(prop.getValue<NIFDictionary>("Specular Color"));
+					extendedData["SpecularColor"] = toJsonValue(specularColor);
+					material->Specular.Set(specularColor);
+
+					auto emissiveColor = getColor3(prop.getValue<NIFDictionary>("Emissive Color"));
+					extendedData["EmissiveColor"] = toJsonValue(emissiveColor);
+					material->Emissive.Set(emissiveColor);
+
+					auto glossiness = prop.getValue<float>("Glossiness");
+					extendedData["Glossiness"] = static_cast<double>(glossiness);
+					material->Shininess.Set(glossiness);
+
+					auto alpha = prop.getValue<float>("Alpha");
+					extendedData["Alpha"] = static_cast<double>(alpha);
+					material->TransparencyFactor.Set(alpha);
+
+					if (prop.data.count("Emissive Mult") != 0) {
+						auto emissiveMult = prop.getValue<float>("Emissive Mult");
+						extendedData["EmissiveMult"] = emissiveMult;
+						material->EmissiveFactor.Set(emissiveMult);
+					}
+				});
+			}
+		}
+		else {
+			fprintf(stderr, "Unsupported property: '%s' on %s\n", prop.typeChain.front().toString(), node->GetName());
+		}
+	}
 }
+
