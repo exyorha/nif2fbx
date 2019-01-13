@@ -39,6 +39,15 @@ namespace fbxnif {
 		);
 	}
 
+	FbxVector4 getMatrix2x2(const NIFDictionary &dict) {
+		return FbxVector4(
+			dict.getValue<float>("m11"),
+			dict.getValue<float>("m21"),
+			dict.getValue<float>("m12"),
+			dict.getValue<float>("m22")
+		);
+	}
+
 	FbxAMatrix getMatrix3x3(const NIFDictionary &dict) {
 		FbxAMatrix mat;
 

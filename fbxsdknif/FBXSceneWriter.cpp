@@ -12,6 +12,8 @@
 #include <fbxsdk/scene/animation/fbxanimcurvenode.h>
 #include <fbxsdk/scene/animation/fbxanimcurvefilters.h>
 #include <fbxsdk/scene/shading/fbxsurfacephong.h>
+#include <fbxsdk/scene/shading/fbxfiletexture.h>
+#include <fbxsdk/scene/shading/fbxlayeredtexture.h>
 
 #include <nifparse/NIFFile.h>
 #include <nifparse/PrettyPrinter.h>
@@ -28,7 +30,7 @@
 #include "JsonUtils.h"
 
 namespace fbxnif {
-	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton) {
+	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton), m_vertexColorVertexMode(2), m_vertexColorLightingMode(1) {
 
 	}
 
@@ -1131,7 +1133,7 @@ namespace fbxnif {
 				}
 			}
 
-		} 
+		}
 		else {
 			fprintf(stderr, "unsupported controller of type %s on node %s\n", controller.typeChain.front().toString(), node->GetName());
 		}
@@ -1296,6 +1298,8 @@ namespace fbxnif {
 				auto material = static_cast<fbxsdk::FbxSurfacePhong *>(establishMaterial(node));
 
 				manipulateExtendedMaterialData(material, [&](Json::Value &extendedData) {
+					extendedData["VertexColorMode"] = m_vertexColorVertexMode;
+					extendedData["VertexLightingMode"] = m_vertexColorLightingMode;
 					extendedData["Model"] = "PreShader";
 
 					if (prop.data.count("Ambient Color") != 0) {
@@ -1333,9 +1337,191 @@ namespace fbxnif {
 				});
 			}
 		}
+		else if (prop.kindOf("NiTexturingProperty")) {
+			if (pass == Pass::Geometry) {
+				auto material = static_cast<fbxsdk::FbxSurfacePhong *>(establishMaterial(node));
+
+				manipulateExtendedMaterialData(material, [&](Json::Value &extendedData) {
+					extendedData["ApplyMode"] = prop.getValue<NIFEnum>("Apply Mode").symbolicValue.toString();
+					Json::Value textures(Json::objectValue);
+
+					if (prop.getValue<uint32_t>("Has Base Texture")) {
+						textures["Base"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Base Texture"));
+					}
+
+					if (prop.getValue<uint32_t>("Has Dark Texture")) {
+						textures["Dark"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Dark Texture"));
+					}
+
+					if (prop.getValue<uint32_t>("Has Detail Texture")) {
+						textures["Detail"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Detail Texture"));
+					}
+
+					if (prop.getValue<uint32_t>("Has Gloss Texture")) {
+						textures["Gloss"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Gloss Texture"));
+					}				
+					
+					if (prop.getValue<uint32_t>("Has Glow Texture")) {
+						textures["Glow"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Glow Texture"));
+					}
+
+					if (prop.data.count("Has Bump Map Texture") && prop.getValue<uint32_t>("Has Bump Map Texture")) {
+						textures["BumpMap"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Bump Map Texture"));
+						extendedData["BumpMapLumaScale"] = static_cast<double>(prop.getValue<float>("Bump Map Luma Scale"));
+						extendedData["BumpMapLumaOffset"] = static_cast<double>(prop.getValue<float>("Bump Map Luma Offset"));
+						extendedData["BumpMapMatrix"] = toJsonValue(getMatrix2x2(prop.getValue<NIFDictionary>("Bump Map Matrix")));
+					}
+
+					if (prop.data.count("Has Normal Texture") && prop.getValue<uint32_t>("Has Normal Texture")) {
+						textures["Normal"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Normal Texture"));
+					}
+
+					if (prop.data.count("Has Parallax Texture") && prop.getValue<uint32_t>("Has Parallax Texture")) {
+						textures["Parallax"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Parallax Texture"));
+						extendedData["ParallaxOffset"] = static_cast<double>(prop.getValue<float>("Parallax Offset"));
+					}
+
+					if (prop.data.count("Has Decal 0 Texture") && prop.getValue<uint32_t>("Has Decal 0 Texture")) {
+						textures["Decal0"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Decal 0 Texture"));
+					}
+
+					if (prop.data.count("Has Decal 1 Texture") && prop.getValue<uint32_t>("Has Decal 1 Texture")) {
+						textures["Decal1"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Decal 1 Texture"));
+					}
+
+					if (prop.data.count("Has Decal 2 Texture") && prop.getValue<uint32_t>("Has Decal 2 Texture")) {
+						textures["Decal2"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Decal 2 Texture"));
+					}
+
+					if (prop.data.count("Has Decal 3 Texture") && prop.getValue<uint32_t>("Has Decal 3 Texture")) {
+						textures["Decal3"] = convertTexDesc(material, prop.getValue<NIFDictionary>("Decal 3 Texture"));
+					}
+
+					if (prop.data.count("Shader Textures")) {
+						Json::Value shader(Json::arrayValue);
+
+						for (const auto &texVal : prop.getValue<NIFArray>("Shader Textures").data) {
+							shader.append(convertTexDesc(material, std::get<NIFDictionary>(texVal)));
+						}
+
+						textures["Shader"] = std::move(shader);
+					}
+
+					extendedData["Textures"] = std::move(textures);
+
+				});
+
+			}
+
+		}
+		else if (prop.kindOf("NiAlphaProperty")) {
+			if (pass == Pass::Geometry) {
+				auto material = static_cast<fbxsdk::FbxSurfacePhong *>(establishMaterial(node));
+
+				manipulateExtendedMaterialData(material, [&](Json::Value &extendedData) {
+					extendedData["AlphaFlags"] = prop.getValue<uint32_t>("Flags");
+					extendedData["AlphaThreshold"] = static_cast<int32_t>(prop.getValue<uint32_t>("Threshold"));
+				});
+			}
+		}
+		else if (prop.kindOf("NiVertexColorProperty")) {
+			if (pass == Pass::Structural) {
+				auto flags = prop.getValue<uint32_t>("Flags");
+				
+				m_vertexColorLightingMode = (flags >> 3) & 1;
+				m_vertexColorVertexMode = (flags >> 4) & 3;
+
+				if (prop.data.count("Vertex Mode") != 0) {
+					m_vertexColorVertexMode = prop.getValue<NIFEnum>("Vertex Mode").rawValue;
+				}
+
+				if (prop.data.count("Lighting Mode") != 0) {
+					m_vertexColorLightingMode = prop.getValue<NIFEnum>("Lighting Mode").rawValue;
+				}
+
+			}
+		}
 		else {
 			fprintf(stderr, "Unsupported property: '%s' on %s\n", prop.typeChain.front().toString(), node->GetName());
 		}
+
+		if (pass == Pass::Animation) {
+			for (auto controller = prop.getValue<NIFReference>("Controller"); controller.ptr; controller = std::get<NIFDictionary>(*controller.ptr).getValue<NIFReference>("Next Controller")) {
+				processController(std::get<NIFDictionary>(*controller.ptr), node);
+			}
+		}
+	}
+
+	Json::Value FBXSceneWriter::convertTexDesc(FbxSurfaceMaterial *material, const NIFDictionary &texDesc) {
+		Json::Value result(Json::objectValue);
+
+		auto phong = static_cast<FbxSurfacePhong *>(material);
+		
+		auto sourceTexture = static_cast<FbxLayeredTexture *>(phong->Diffuse.GetSrcObject());
+		if (!sourceTexture) {
+			sourceTexture = FbxLayeredTexture::Create(m_scene, "");
+			phong->Diffuse.ConnectSrcObject(sourceTexture);
+		}
+
+		auto texture = FbxFileTexture::Create(m_scene, "");
+		sourceTexture->ConnectSrcObject(texture);
+
+		const auto &sourceRef = texDesc.getValue<NIFReference>("Source");
+		if (!sourceRef.ptr)
+			throw std::logic_error("no source for texture");
+
+		const auto &source = std::get<NIFDictionary>(*sourceRef.ptr);
+
+		if (source.getValue<uint32_t>("Use External")) {
+			const auto &sourceFile = getString(source.getValue<NIFDictionary>("File Name"), m_file.header());
+			result["FileName"] = sourceFile;
+			texture->SetRelativeFileName(sourceFile.c_str());
+		}
+		else {
+			throw std::logic_error("internal textures are not supported");
+		}
+
+		if (source.data.count("Clamp Mode") != 0) {
+			result["ClampMode"] = source.getValue<NIFEnum>("Clamp Mode").rawValue;
+		}
+
+		if (source.data.count("Filter Mode") != 0) {
+			result["FilterMode"] = source.getValue<NIFEnum>("Filter Mode").rawValue;
+		}
+
+
+		if (source.data.count("Flags") != 0) {
+			auto flags = source.getValue<uint32_t>("Flags");
+
+			result["ClampMode"] = (flags >> 12) & 15;
+			result["FilterMode"] = (flags >> 8) & 15;
+		}
+
+		if (source.data.count("Max Anisotropy") != 0) {
+			result["MaxAnisotropy"] = source.getValue<uint32_t>("Max Anisotropy");
+		}
+
+		if (source.data.count("UV Set") != 0) {
+			result["UVSet"] = source.getValue<uint32_t>("UV Set");
+		}
+
+		if (source.data.count("PS2 L") != 0) {
+			result["MipScale"] = source.getValue<uint32_t>("PS2 L");
+		}
+
+		if (source.data.count("PS2 K") != 0) {
+			result["MipBias"] = static_cast<int32_t>(source.getValue<uint32_t>("PS2 K"));
+		}
+
+		if (source.data.count("Has Texture Transform") && source.getValue<uint32_t>("Has Texture Transform")) {
+			result["Translation"] = toJsonValue(getTexCoord(source.getValue<NIFDictionary>("Translation")));
+			result["Scale"] = toJsonValue(getTexCoord(source.getValue<NIFDictionary>("Scale")));
+			result["Rotation"] = static_cast<double>(source.getValue<float>("Rotation"));
+			result["TransformMethod"] = source.getValue<NIFEnum>("Transofmr Method").symbolicValue.toString();
+			result["Center"] = toJsonValue(getTexCoord(source.getValue<NIFDictionary>("Center")));
+		}
+
+		return result;
 	}
 }
 

@@ -11,6 +11,8 @@
 
 #include <unordered_map>
 
+#include <json-forwards.h>
+
 namespace nifparse {
 	class NIFFile;
 }
@@ -105,6 +107,8 @@ namespace fbxnif {
 		void processKeyframeAnimation(const NIFReference &data, FbxNode *node);
 		void applyInterpolatorTransform(const NIFDictionary &interpolator, FbxNode *node);
 		void processBSplineAnimation(const NIFDictionary &interpolator, FbxNode *node);
+		
+		Json::Value convertTexDesc(FbxSurfaceMaterial *material, const NIFDictionary &texDesc);
 
 		const NIFFile &m_file;
 		const SkeletonProcessor &m_skeleton;
@@ -116,6 +120,8 @@ namespace fbxnif {
 		FbxString m_skeletonFile;
 		bool m_skeletonImported;
 		std::vector<AnimationTake> m_animationTakes;
+		unsigned int m_vertexColorVertexMode;
+		unsigned int m_vertexColorLightingMode;
 	};
 }
 
