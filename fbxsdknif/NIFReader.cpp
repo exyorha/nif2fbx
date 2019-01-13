@@ -13,7 +13,7 @@
 
 namespace fbxnif {
 	const char *const NIFReader::m_extensions[]{ "nif", "kf", nullptr };
-	const char *const NIFReader::m_descriptions[]{ "Reader for NIF-formatted model files", nullptr };
+	const char *const NIFReader::m_descriptions[]{ "Gamebryo model files (*.nif)", "Gamebryo animation files (*.kf)", nullptr };
 	
 	NIFReader::NIFReader(FbxManager &manager, int id) : FbxReader(manager, id, FbxStatusGlobal::GetRef()) {
 
