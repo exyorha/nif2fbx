@@ -1099,7 +1099,14 @@ namespace fbxnif {
 
 				auto baseControlPoints = mesh->GetControlPoints();
 
+				bool first = true;
+
 				for (const auto &morphValue : dataDict.getValue<NIFArray>("Morphs").data) {
+					if (first) {
+						first = false;
+						continue;
+					}
+
 					const auto &morph = std::get<NIFDictionary>(morphValue);
 
 					std::string name;
