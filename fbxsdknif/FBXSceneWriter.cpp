@@ -157,10 +157,13 @@ namespace fbxnif {
 	void FBXSceneWriter::convertNiNode(const NIFDictionary &dict, fbxsdk::FbxNode *node, Pass pass) {
 		ensureSkeletonImported(node);
 
-		if (dict.typeChain.front() != Symbol("NiNode")) {
+		if (dict.typeChain.front() == Symbol("RootCollisionNode")) {
+			if (pass == Pass::Geometry)
+				return;
+		} else if (dict.typeChain.front() != Symbol("NiNode")) {
 			fprintf(stderr, "FBXSceneWriter: %s: unsupported NiNode subclass interpreted as NiNode: %s\n", node->GetName(), dict.typeChain.front().toString());
 		}
-		
+	
 		for (const auto &child : dict.getValue<NIFArray>("Children").data) {
 			auto childRef = std::get<NIFReference>(child);
 			if (!childRef.ptr)
