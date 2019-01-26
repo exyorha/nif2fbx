@@ -30,7 +30,7 @@
 #include "JsonUtils.h"
 
 namespace fbxnif {
-	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton), m_vertexColorVertexMode(2), m_vertexColorLightingMode(1) {
+	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton), m_vertexColorVertexMode(0), m_vertexColorLightingMode(1) {
 
 	}
 
