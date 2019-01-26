@@ -1488,44 +1488,43 @@ namespace fbxnif {
 			throw std::logic_error("internal textures are not supported");
 		}
 
-		if (source.data.count("Clamp Mode") != 0) {
-			result["ClampMode"] = source.getValue<NIFEnum>("Clamp Mode").rawValue;
+		if (texDesc.data.count("Clamp Mode") != 0) {
+			result["ClampMode"] = texDesc.getValue<NIFEnum>("Clamp Mode").rawValue;
 		}
 
-		if (source.data.count("Filter Mode") != 0) {
-			result["FilterMode"] = source.getValue<NIFEnum>("Filter Mode").rawValue;
+		if (texDesc.data.count("Filter Mode") != 0) {
+			result["FilterMode"] = texDesc.getValue<NIFEnum>("Filter Mode").rawValue;
 		}
 
-
-		if (source.data.count("Flags") != 0) {
-			auto flags = source.getValue<uint32_t>("Flags");
+		if (texDesc.data.count("Flags") != 0) {
+			auto flags = texDesc.getValue<uint32_t>("Flags");
 
 			result["ClampMode"] = (flags >> 12) & 15;
 			result["FilterMode"] = (flags >> 8) & 15;
 		}
 
-		if (source.data.count("Max Anisotropy") != 0) {
-			result["MaxAnisotropy"] = source.getValue<uint32_t>("Max Anisotropy");
+		if (texDesc.data.count("Max Anisotropy") != 0) {
+			result["MaxAnisotropy"] = texDesc.getValue<uint32_t>("Max Anisotropy");
 		}
 
-		if (source.data.count("UV Set") != 0) {
-			result["UVSet"] = source.getValue<uint32_t>("UV Set");
+		if (texDesc.data.count("UV Set") != 0) {
+			result["UVSet"] = texDesc.getValue<uint32_t>("UV Set");
 		}
 
-		if (source.data.count("PS2 L") != 0) {
-			result["MipScale"] = source.getValue<uint32_t>("PS2 L");
+		if (texDesc.data.count("PS2 L") != 0) {
+			result["MipScale"] = texDesc.getValue<uint32_t>("PS2 L");
 		}
 
-		if (source.data.count("PS2 K") != 0) {
-			result["MipBias"] = static_cast<int32_t>(source.getValue<uint32_t>("PS2 K"));
+		if (texDesc.data.count("PS2 K") != 0) {
+			result["MipBias"] = static_cast<int32_t>(texDesc.getValue<uint32_t>("PS2 K"));
 		}
 
-		if (source.data.count("Has Texture Transform") && source.getValue<uint32_t>("Has Texture Transform")) {
-			result["Translation"] = toJsonValue(getTexCoord(source.getValue<NIFDictionary>("Translation")));
-			result["Scale"] = toJsonValue(getTexCoord(source.getValue<NIFDictionary>("Scale")));
-			result["Rotation"] = static_cast<double>(source.getValue<float>("Rotation"));
-			result["TransformMethod"] = source.getValue<NIFEnum>("Transofmr Method").symbolicValue.toString();
-			result["Center"] = toJsonValue(getTexCoord(source.getValue<NIFDictionary>("Center")));
+		if (texDesc.data.count("Has Texture Transform") && texDesc.getValue<uint32_t>("Has Texture Transform")) {
+			result["Translation"] = toJsonValue(getTexCoord(texDesc.getValue<NIFDictionary>("Translation")));
+			result["Scale"] = toJsonValue(getTexCoord(texDesc.getValue<NIFDictionary>("Scale")));
+			result["Rotation"] = static_cast<double>(texDesc.getValue<float>("Rotation"));
+			result["TransformMethod"] = texDesc.getValue<NIFEnum>("Transform Method").symbolicValue.toString();
+			result["Center"] = toJsonValue(getTexCoord(texDesc.getValue<NIFDictionary>("Center")));
 		}
 
 		return result;
