@@ -12,7 +12,7 @@ endif()
 
 add_library(fbxsdk INTERFACE)
 target_include_directories(fbxsdk INTERFACE "${FBX_SDK_ROOT}/include")
-target_link_libraries(fbxsdk INTERFACE "${FBX_SDK_ROOT}/lib/vs2015/x64/release/libfbxsdk.lib")
+target_link_libraries(fbxsdk INTERFACE "${FBX_SDK_ROOT}/lib/vs2017/x64/release/libfbxsdk.lib")
 target_compile_definitions(fbxsdk INTERFACE -DFBXSDK_SHARED)
 
 if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
@@ -20,8 +20,8 @@ if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
 
 	add_custom_target(copy_fbxsdk_dll ALL
 		COMMAND
-			cmake -E copy_if_different 
-			${FBX_SDK_ROOT}/lib/vs2015/x64/release/libfbxsdk.dll 
+			cmake -E copy_if_different
+			${FBX_SDK_ROOT}/lib/vs2017/x64/release/libfbxsdk.dll
 			$<TARGET_FILE_DIR:nif2fbx-test>/libfbxsdk.dll
 		VERBATIM
 	)
@@ -41,4 +41,3 @@ add_subdirectory(fbxsdknif)
 if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
 	add_subdirectory(nif2fbx-test)
 endif()
-
