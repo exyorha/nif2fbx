@@ -441,24 +441,24 @@ namespace fbxnif {
 			
 			if (controllerDict.kindOf("NiKeyframeController")) {
 				if (std::get<NIFDictionary>(*controller).data.count(Symbol("Data")) != 0) {
-					auto &keyfData = std::get<NIFDictionary>(*controllerDict.getValue<NIFReference>("Data").ptr);
+					const auto& dataPtr = controllerDict.getValue<NIFReference>("Data").ptr;
+					if (dataPtr) {
+						auto& keyfData = std::get<NIFDictionary>(*controllerDict.getValue<NIFReference>("Data").ptr);
 
-					auto rotationKeys = keyfData.getValue<uint32_t>("Num Rotation Keys");
-					auto translationKeys = keyfData.getValue<NIFDictionary>("Translations").getValue<uint32_t>("Num Keys");
-					auto scaleKeys = keyfData.getValue<NIFDictionary>("Scales").getValue<uint32_t>("Num Keys");
+						auto rotationKeys = keyfData.getValue<uint32_t>("Num Rotation Keys");
+						auto translationKeys = keyfData.getValue<NIFDictionary>("Translations").getValue<uint32_t>("Num Keys");
+						auto scaleKeys = keyfData.getValue<NIFDictionary>("Scales").getValue<uint32_t>("Num Keys");
 
-					if (rotationKeys < 2 && translationKeys < 2 && scaleKeys < 2) {
-						fprintf(stderr, "%s: has degenerate keyframe controller, removing\n", nodeName(desc).c_str());
+						if (rotationKeys < 2 && translationKeys < 2 && scaleKeys < 2) {
+							fprintf(stderr, "%s: has degenerate keyframe controller, removing\n", nodeName(desc).c_str());
 
-						// TODO: implement actual removal
+							// TODO: implement actual removal
 
+						}
+						else {
+							m_allBones.emplace(node.ptr);
+						}
 					}
-					else {
-						m_allBones.emplace(node.ptr);
-					}
-				}
-				else {
-					m_allBones.emplace(node.ptr);
 				}
 			}
 			else if (controllerDict.kindOf("NiMultiTargetTransformController")) {
