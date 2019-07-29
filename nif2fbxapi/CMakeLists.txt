@@ -1,0 +1,2 @@
+add_library(nif2fbxapi INTERFACE)
+target_include_directories(nif2fbxapi INTERFACE include)

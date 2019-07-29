@@ -24,6 +24,8 @@ namespace fbxsdk {
 	class FbxAnimCurve;
 }
 
+class NIF2FBXExtension;
+
 namespace fbxnif {
 	class SkeletonProcessor;
 
@@ -44,6 +46,9 @@ namespace fbxnif {
 
 		inline const FbxString &skeletonFile() const { return m_skeletonFile; }
 		inline void setSkeletonFile(const FbxString &skeletonFile) { m_skeletonFile = skeletonFile; }
+
+		inline NIF2FBXExtension* extension() const { return m_extension; }
+		inline void setExtension(NIF2FBXExtension* extension) { m_extension = extension; }
 
 	private:
 		enum class Pass {
@@ -122,6 +127,7 @@ namespace fbxnif {
 		std::vector<AnimationTake> m_animationTakes;
 		unsigned int m_vertexColorVertexMode;
 		unsigned int m_vertexColorLightingMode;
+		NIF2FBXExtension* m_extension;
 	};
 }
 

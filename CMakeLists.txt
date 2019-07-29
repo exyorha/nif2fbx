@@ -36,6 +36,7 @@ endif()
 add_subdirectory(nifparse/halffloat)
 add_subdirectory(nifparse)
 add_subdirectory(jsoncpp)
+add_subdirectory(nif2fbxapi)
 add_subdirectory(fbxsdknif)
 
 if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})

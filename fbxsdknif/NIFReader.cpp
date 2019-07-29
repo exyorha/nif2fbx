@@ -67,8 +67,16 @@ namespace fbxnif {
 				"Full path to skeleton file (FBX)",
 				&skeletonDefault,
 				true);
-		}
 
+			unsigned long long extensionDefault = 0;
+			ios.AddProperty(
+				plugin,
+				"Extension",
+				FbxULongLongDT,
+				"Pointer to NIF2FBXExtension (in integrated environments)",
+				&extensionDefault,
+				true);
+		}
 	}
 
 	bool NIFReader::FileOpen(char *pFileName) {
@@ -120,6 +128,11 @@ namespace fbxnif {
 				auto skeletonFile = ios->GetStringProp(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Skeleton", "");
 				if (!skeletonFile.IsEmpty()) {
 					writer.setSkeletonFile(skeletonFile);
+				}
+
+				auto extensionProperty = ios->GetProperty(IMP_FBX_EXT_SDK_GRP "|FBXSDKNIF|Extension");
+				if (extensionProperty.IsValid()) {
+					writer.setExtension(reinterpret_cast<NIF2FBXExtension *>(static_cast<uintptr_t>(extensionProperty.Get<unsigned long long>())));
 				}
 			}
 

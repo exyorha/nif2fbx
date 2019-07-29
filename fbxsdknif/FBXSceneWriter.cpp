@@ -29,14 +29,14 @@
 #include "BSplineDataSet.h"
 #include "JsonUtils.h"
 
+#include <NIF2FBXExtension.h>
+
 namespace fbxnif {
-	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton), m_vertexColorVertexMode(0), m_vertexColorLightingMode(1) {
+	FBXSceneWriter::FBXSceneWriter(const NIFFile &file, const SkeletonProcessor &skeleton) : m_file(file), m_skeleton(skeleton), m_vertexColorVertexMode(0), m_vertexColorLightingMode(1), m_extension(nullptr) {
 
 	}
 
-	FBXSceneWriter::~FBXSceneWriter() {
-
-	}
+	FBXSceneWriter::~FBXSceneWriter() = default;
 
 	void FBXSceneWriter::write(FbxDocument *document) {
 		m_scene = FbxCast<FbxScene>(document);
@@ -50,7 +50,7 @@ namespace fbxnif {
 		}
 			   
 		FbxAxisSystem(FbxAxisSystem::eZAxis, FbxAxisSystem::eParityOdd, FbxAxisSystem::eRightHanded).ConvertScene(m_scene);
-		FbxSystemUnit(1.4287109375).ConvertScene(m_scene);
+		FbxSystemUnit(1.42876476378).ConvertScene(m_scene);
 
 		const auto &root = std::get<NIFReference>(m_file.rootObjects().data.front());
 		const auto &rootDict = std::get<NIFDictionary>(*root.ptr);
@@ -1483,9 +1483,19 @@ namespace fbxnif {
 		const auto &source = std::get<NIFDictionary>(*sourceRef.ptr);
 
 		if (source.getValue<uint32_t>("Use External")) {
-			const auto &sourceFile = getString(source.getValue<NIFDictionary>("File Name"), m_file.header());
-			result["FileName"] = sourceFile;
-			texture->SetRelativeFileName(sourceFile.c_str());
+			const auto& sourceFile = getString(source.getValue<NIFDictionary>("File Name"), m_file.header());
+
+			if (m_extension) {
+				std::string assetName, fileName;
+				m_extension->translateTextureAsset(sourceFile, assetName, fileName);
+				result["AssetName"] = assetName;
+				result["FileName"] = fileName;
+				texture->SetFileName(fileName.c_str());
+			} else {
+				result["FileName"] = sourceFile;
+				texture->SetRelativeFileName(sourceFile.c_str());
+			}
+
 		}
 		else {
 			throw std::logic_error("internal textures are not supported");

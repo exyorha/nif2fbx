@@ -17,5 +17,5 @@ add_library(fbxsdknif SHARED
 	SkeletonProcessor.cpp
 	SkeletonProcessor.h
 )
-target_link_libraries(fbxsdknif PRIVATE fbxsdk nifparse jsoncpp)
+target_link_libraries(fbxsdknif PRIVATE fbxsdk nifparse jsoncpp nif2fbxapi)
 
